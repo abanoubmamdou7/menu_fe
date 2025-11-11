@@ -9,7 +9,19 @@ export interface PublicBranch {
   city?: string;
 }
 
-interface BranchApiResponse {
+interface BranchDatabaseResponse {
+  success: boolean;
+  data?: BranchDatabaseEntry[];
+  message?: string;
+}
+
+interface BranchDatabaseEntry {
+  code?: string | null;
+  name?: string | null;
+  company?: string | null;
+}
+
+interface ConnectClientResponse {
   success: boolean;
   message?: string;
   branches?: BranchApi[];
@@ -42,7 +54,59 @@ const dedupeBranches = (branches: PublicBranch[]): PublicBranch[] => {
   });
 };
 
-const fetchBranchesFromApi = async (): Promise<PublicBranch[]> => {
+const fetchBranchesFromDatabase = async (): Promise<PublicBranch[]> => {
+  try {
+    const response = await fetch(
+      `${import.meta.env.VITE_API_BASE_URL}/api/items/branches`,
+      {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        credentials: "include",
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error(
+        `Branch database fetch failed with status ${response.status}`
+      );
+    }
+
+    const data = (await response.json()) as BranchDatabaseResponse;
+
+    if (!data?.success || !Array.isArray(data.data)) {
+      const reason = data?.message ?? "Invalid branch data response";
+      throw new Error(reason);
+    }
+
+    return data.data
+      .map((branch): PublicBranch | null => {
+        const code = normalizeBranchCode(branch?.code);
+        if (!code) {
+          return null;
+        }
+
+        const nameCandidate =
+          typeof branch?.name === "string" && branch.name.trim().length > 0
+            ? branch.name.trim()
+            : null;
+
+        return {
+          code,
+          name: nameCandidate ?? `Branch ${code}`,
+          address: undefined,
+          city: undefined,
+        };
+      })
+      .filter((branch): branch is PublicBranch => branch !== null);
+  } catch (error) {
+    console.warn("Failed to load branches from restaurant_branches:", error);
+    return [];
+  }
+};
+
+const fetchBranchesFromConnectClient = async (): Promise<PublicBranch[]> => {
   try {
     const token =
       typeof window !== "undefined" ? window.localStorage.getItem("token") : null;
@@ -65,7 +129,7 @@ const fetchBranchesFromApi = async (): Promise<PublicBranch[]> => {
       throw new Error(errorMessage);
     }
 
-    const data = (await response.json()) as BranchApiResponse;
+    const data = (await response.json()) as ConnectClientResponse;
 
     if (!data?.success || !Array.isArray(data.branches)) {
       const reason = data?.message ?? "Unknown error";
@@ -96,7 +160,13 @@ const fetchBranchesFromApi = async (): Promise<PublicBranch[]> => {
 };
 
 export const fetchMenuBranches = async (): Promise<PublicBranch[]> => {
-  const apiBranches = await fetchBranchesFromApi();
+  const databaseBranches = await fetchBranchesFromDatabase();
+
+  if (databaseBranches.length > 0) {
+    return dedupeBranches(databaseBranches);
+  }
+
+  const apiBranches = await fetchBranchesFromConnectClient();
 
   if (apiBranches.length > 0) {
     return dedupeBranches(apiBranches);
