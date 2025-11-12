@@ -4,16 +4,7 @@ import { MenuItem } from "@/services/menuServices";
 import { useLanguage } from "@/hooks/useLanguage";
 import { AspectRatio } from "@/components/ui/aspect-ratio";
 import { cn } from "@/lib/utils";
-import { useRestaurantLogo } from "../hooks/useRestaurantLogo.ts";
-
-function uint8ToBase64(uint8Array: Uint8Array): string {
-  let binary = '';
-  for (let i = 0; i < uint8Array.length; i++) {
-    binary += String.fromCharCode(uint8Array[i]);
-  }
-  return btoa(binary);
-}
-
+import { useMenuItemImage } from "@/getImageSrc";
 
 interface MenuItemCardProps {
   item: MenuItem;
@@ -21,33 +12,8 @@ interface MenuItemCardProps {
 
 const MenuItemCard: React.FC<MenuItemCardProps> = ({ item }) => {
   const { language } = useLanguage();
-  const defaultImage = useRestaurantLogo();
-  const getImageSrc = (item: MenuItem): string => {
-    if (!item) return defaultImage;
-  
-    // 1️⃣ If photo_url (LONGBLOB) is valid, show base64 image
-    if (
-      item.photo_url &&
-      typeof item.photo_url === "object" &&
-      "data" in item.photo_url &&
-      Array.isArray(item.photo_url.data) &&
-      item.photo_url.data.length > 0
-    ) {
-      const byteArray = new Uint8Array(item.photo_url.data);
-      const base64 = uint8ToBase64(byteArray);
-      return `data:image/jpeg;base64,${base64}`;
-    }
-  
-    // 2️⃣ If image is a filename string, use server API
-    if (typeof item.image === "string" && item.image.trim()) {
-      const encoded = encodeURIComponent(item.image.trim());
-      return `${import.meta.env.VITE_API_BASE_URL}/api/image/getImage?fileName=${encoded}`;
-    }
-  
-    // 3️⃣ Fallback
-    return defaultImage;
-  };
-  
+  const { getImageSrc, defaultImage } = useMenuItemImage();
+  const fallbackImage = defaultImage || "/smartlogo.png";
 
   return (
     <Card
@@ -68,7 +34,7 @@ const MenuItemCard: React.FC<MenuItemCardProps> = ({ item }) => {
               src={getImageSrc(item)}
               alt={item.name || "Menu item"}
               onError={(e) => {
-                e.currentTarget.src = defaultImage;
+                e.currentTarget.src = fallbackImage;
               }}
               className="object-cover w-full h-full transition-transform duration-500 group-hover:scale-105"
             />

@@ -10,11 +10,26 @@ function uint8ToBase64(uint8Array: Uint8Array): string {
   return btoa(binary);
 }
 
+const isAbsoluteUrl = (value: string): boolean => {
+  return /^https?:\/\//i.test(value) || value.startsWith("data:");
+};
+
+const normalizeImageUrl = (rawValue?: string | null): string | null => {
+  if (!rawValue) return null;
+  const trimmed = rawValue.trim();
+  if (!trimmed) return null;
+  if (isAbsoluteUrl(trimmed)) return trimmed;
+  if (trimmed.startsWith("//")) {
+    return `https:${trimmed}`;
+  }
+  return null;
+};
+
 export const useMenuItemImage = () => {
   const defaultImage = useRestaurantLogo();
 
   const getImageSrc = (item: MenuItem): string => {
-    if (!item) return defaultImage;
+    if (!item) return defaultImage || "";
 
     // If photo_url (LONGBLOB) exists
     if (
@@ -28,14 +43,23 @@ export const useMenuItemImage = () => {
       return `data:image/jpeg;base64,${uint8ToBase64(byteArray)}`;
     }
 
-    // If image is a string
-    if (typeof item.image === "string" && item.image.trim()) {
-      const encoded = encodeURIComponent(item.image.trim());
-      return `${import.meta.env.VITE_API_BASE_URL}/api/image/getImage?fileName=${encoded}`;
+    if (typeof item.photo_url === "string") {
+      const normalizedPhotoUrl = normalizeImageUrl(item.photo_url);
+      if (normalizedPhotoUrl) {
+        return normalizedPhotoUrl;
+      }
     }
 
-    return defaultImage;
+    // If image is a string
+    if (typeof item.image === "string" && item.image.trim()) {
+      const normalizedImageUrl = normalizeImageUrl(item.image);
+      if (normalizedImageUrl) {
+        return normalizedImageUrl;
+      }
+    }
+
+    return defaultImage || "";
   };
 
-  return { getImageSrc };
+  return { getImageSrc, defaultImage };
 };

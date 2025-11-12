@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useForm } from "react-hook-form";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -57,6 +57,11 @@ interface MenuItemFormProps {
   onClose: () => void;
 }
 
+type MenuCategoryWithBranch = MenuCategory & {
+  branchCode?: string | null;
+  orderGroup?: number | null;
+};
+
 const MenuItemForm = ({
   currentItem,
   isEditing,
@@ -88,6 +93,42 @@ const MenuItemForm = ({
       spicy: false,
     },
   });
+  const categoryOptions = useMemo(() => {
+    if (!Array.isArray(categories)) {
+      return [];
+    }
+
+    const deduped = new Map<string, MenuCategoryWithBranch>();
+
+    categories.forEach((category) => {
+      const categoryWithBranch = category as MenuCategoryWithBranch;
+      const key = `${categoryWithBranch.id ?? ""}__${categoryWithBranch.branchCode ?? "default"}`;
+
+      if (!categoryWithBranch.id || deduped.has(key)) {
+        return;
+      }
+
+      deduped.set(key, categoryWithBranch);
+    });
+
+    return Array.from(deduped.values()).sort((a, b) => {
+      const orderA = Number.isFinite(a.orderGroup) ? (a.orderGroup as number) : 0;
+      const orderB = Number.isFinite(b.orderGroup) ? (b.orderGroup as number) : 0;
+
+      if (orderA !== orderB) {
+        return orderA - orderB;
+      }
+
+      return (a.name || "").localeCompare(b.name || "");
+    });
+  }, [categories]);
+
+  const getCategoryLabel = (category: MenuCategoryWithBranch) => {
+    if (category.branchCode) {
+      return `${category.name} (${category.branchCode})`;
+    }
+    return category.name;
+  };
 
   useEffect(() => {
     if (currentItem && isEditing) {
@@ -409,15 +450,27 @@ const MenuItemForm = ({
               >
                 <FormControl>
                   <SelectTrigger>
-                    <SelectValue placeholder="Select a category" />
+                    <SelectValue
+                      placeholder={
+                        categoryOptions.length === 0
+                          ? "No categories available"
+                          : "Select a category"
+                      }
+                    />
                   </SelectTrigger>
                 </FormControl>
                 <SelectContent>
-                  {categories?.map((category) => (
-                    <SelectItem key={category.id} value={category.id}>
-                      {category.name}
+                  {categoryOptions.length === 0 ? (
+                    <SelectItem value="__empty" disabled>
+                      No categories available
                     </SelectItem>
-                  ))}
+                  ) : (
+                    categoryOptions.map((category) => (
+                      <SelectItem key={`${category.id}-${category.branchCode ?? "default"}`} value={category.id}>
+                        {getCategoryLabel(category)}
+                      </SelectItem>
+                    ))
+                  )}
                 </SelectContent>
               </Select>
               <FormMessage />

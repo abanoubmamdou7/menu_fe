@@ -5,6 +5,26 @@ interface TagUploadState {
   url?: string;
 }
 
+const normalizeRemoteImageUrl = (value?: string | null): string | null => {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  if (/^https?:\/\//i.test(trimmed) || trimmed.startsWith("data:")) {
+    return trimmed;
+  }
+  if (trimmed.startsWith("//")) {
+    return `https:${trimmed}`;
+  }
+  return null;
+};
+
+const getImageUrl = (tagData: TagUploadState): string | null => {
+  if (tagData.preview) {
+    return tagData.preview;
+  }
+  return normalizeRemoteImageUrl(tagData.url);
+};
+
 export interface MenuItem {
   order: number;
   id: string;
@@ -112,16 +132,6 @@ interface RawMenuCategory {
   children?: RawMenuCategory[];
   [key: string]: unknown;
 }
-
-const getImageUrl = (tagData: TagUploadState): string | null => {
-  if (tagData.preview) {
-    return tagData.preview;
-  }
-  if (tagData.url) {
-    return `${import.meta.env.VITE_API_BASE_URL}/api/image/getImage?fileName=${tagData.url}`;
-  }
-  return null;
-};
 
 export interface MenuCategory {
   id: string;

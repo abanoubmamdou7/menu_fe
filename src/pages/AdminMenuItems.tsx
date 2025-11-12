@@ -1,5 +1,5 @@
-import React, { useState, useMemo } from 'react';
-import { useMenuItems, useMenuCategories, uploadMenuItemPhoto } from '@/services/menuServices';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import { useMenuItems, uploadMenuItemPhoto, MenuCategory, MenuItem } from '@/services/menuServices';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -25,7 +25,7 @@ interface MenuItemFormData {
 const AdminMenuItems = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [isEditing, setIsEditing] = useState(false);
-  const [currentItem, setCurrentItem] = useState<any>(null);
+  const [currentItem, setCurrentItem] = useState<MenuItem | null>(null);
   const [isOpen, setIsOpen] = useState(false);
 
   const { 
@@ -34,10 +34,94 @@ const AdminMenuItems = () => {
     refetch: refetchItems
   } = useMenuItems();
 
-  const { 
-    data: categories,
-    isLoading: isLoadingCategories
-  } = useMenuCategories();
+  interface MenuCategoryWithBranch extends MenuCategory {
+    branchCode?: string | null;
+  }
+
+  const [categories, setCategories] = useState<MenuCategoryWithBranch[]>([]);
+  const [isLoadingCategories, setIsLoadingCategories] = useState<boolean>(false);
+  const [categoryError, setCategoryError] = useState<string | null>(null);
+
+  const normalizeCategory = useCallback((raw: Record<string, unknown>): MenuCategoryWithBranch | null => {
+    const orderGroupRaw = raw?.order_group ?? raw?.orderGroup ?? 0;
+    const orderGroup =
+      typeof orderGroupRaw === 'number'
+        ? orderGroupRaw
+        : typeof orderGroupRaw === 'string'
+        ? Number(orderGroupRaw)
+        : 0;
+    const nestedLevelRaw = raw?.nested_level ?? raw?.nestedLevel ?? 1;
+    const nested_level =
+      typeof nestedLevelRaw === 'number'
+        ? nestedLevelRaw
+        : typeof nestedLevelRaw === 'string'
+        ? Number(nestedLevelRaw)
+        : 1;
+
+    const id = (raw?.itm_group_code ?? raw?.id ?? '') as string;
+    if (!id) {
+      return null;
+    }
+
+    const branchCode = (raw?.branch_code ?? raw?.branchCode ?? null) as string | null;
+
+    return {
+      id,
+      name: (raw?.website_name_en ?? raw?.itm_group_name ?? raw?.name ?? '') as string,
+      nameAr: (raw?.website_name_ar ?? raw?.itm_group_name_ar ?? '') as string,
+      orderGroup: Number.isFinite(orderGroup) ? orderGroup : 0,
+      nested_level: Number.isFinite(nested_level) ? nested_level : 1,
+      parent_group_code: (raw?.parent_group_code ?? raw?.parentGroupCode ?? null) as string | null,
+      path: (raw?.path ?? '') as string,
+      children: [],
+      branchCode,
+    };
+  }, []);
+
+  const fetchCategories = useCallback(async () => {
+    setIsLoadingCategories(true);
+    try {
+      const { data, error } = await supabase
+        .from('item_main_group')
+        .select(`
+          itm_group_code,
+          itm_group_name,
+          website_name_en,
+          website_name_ar,
+          order_group,
+          nested_level,
+          parent_group_code,
+          path,
+          branch_code
+        `)
+        .order('order_group', { ascending: true });
+
+      if (error) {
+        throw error;
+      }
+
+      const normalized =
+        Array.isArray(data) && data.length > 0
+          ? data
+              .map((category) => normalizeCategory(category as Record<string, unknown>))
+              .filter((category): category is MenuCategoryWithBranch => Boolean(category))
+          : [];
+
+      setCategories(normalized);
+      setCategoryError(null);
+    } catch (error) {
+      console.error('Failed to fetch categories', error);
+      const message = error instanceof Error ? error.message : 'Failed to load categories';
+      setCategoryError(message);
+      toast.error(message);
+    } finally {
+      setIsLoadingCategories(false);
+    }
+  }, [normalizeCategory]);
+
+  useEffect(() => {
+    fetchCategories();
+  }, [fetchCategories]);
 
   const filteredItems = useMemo(() => {
     if (!menuItems) return [];
@@ -60,7 +144,7 @@ const AdminMenuItems = () => {
     setIsOpen(true);
   };
 
-  const handleEditItem = (item) => {
+  const handleEditItem = (item: MenuItem) => {
     setIsEditing(true);
     setCurrentItem(item);
     setIsOpen(true);
@@ -79,8 +163,9 @@ const AdminMenuItems = () => {
       
       toast.success("Item deleted successfully");
       refetchItems();
-    } catch (error: any) {
-      toast.error("Failed to delete item: " + error.message);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to delete item';
+      toast.error(`Failed to delete item: ${message}`);
     }
   };
 
@@ -136,8 +221,9 @@ const AdminMenuItems = () => {
       setIsOpen(false);
       setCurrentItem(null);
       refetchItems();
-    } catch (error: any) {
-      toast.error(`Failed to ${isEditing ? 'update' : 'create'} item: ${error.message}`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      toast.error(`Failed to ${isEditing ? 'update' : 'create'} item: ${message}`);
     }
   };
 
@@ -151,19 +237,25 @@ const AdminMenuItems = () => {
         <h2 className="text-2xl font-bold">Menu Items</h2>
         <div className="flex gap-2 w-full md:w-auto">
           <div className="relative flex-1 md:w-64">
-            <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input
+            {/* <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" /> */}
+            {/* <Input
               placeholder="Search menu items..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="pl-8"
-            />
+            /> */}
           </div>
           <Button onClick={handleAddItem}>
             Add New Item
           </Button>
         </div>
       </div>
+
+      {categoryError && (
+        <div className="border border-red-200 bg-red-50 text-red-600 text-sm rounded-md px-4 py-2">
+          {categoryError}
+        </div>
+      )}
 
       <MenuItemsTable 
         items={filteredItems}
