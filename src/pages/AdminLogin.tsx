@@ -1,155 +1,125 @@
 // export default AdminLogin;
-import React, { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { login } from '../lib/auth.ts';
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { login } from "../lib/auth.ts";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { cn } from "@/lib/utils";
+import SocialLogin from "@/components/register/SocialLogin";
+import { Loader2, Shield } from "lucide-react";
+import { toast } from "sonner";
 
 const AdminLogin: React.FC = () => {
   const navigate = useNavigate();
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
-    const isLoggedIn = localStorage.getItem('isLoggedIn') === 'true';
-    if (isLoggedIn) {
-      navigate('/admin');
+    if (localStorage.getItem("isLoggedIn") === "true") {
+      navigate("/admin");
     }
   }, [navigate]);
 
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsLoading(true);
+  const isSubmitDisabled = useMemo(
+    () => !email.trim() || !password.trim() || isLoading,
+    [email, password, isLoading]
+  );
 
-    try {
-      await login({ email, password });
-      navigate('/admin'); // Redirect after successful login
-    } catch (error: any) {
-      alert(error.message); // Optionally show error
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  const handleLogin = useCallback(
+    async (event: React.FormEvent<HTMLFormElement>) => {
+      event.preventDefault();
+      if (isSubmitDisabled) return;
+
+      setIsLoading(true);
+      try {
+        await login({ email, password });
+        navigate("/admin");
+      } catch (error: unknown) {
+        const message =
+          error instanceof Error ? error.message : "Unable to sign in. Try again.";
+        toast.error(message);
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [email, password, navigate, isSubmitDisabled]
+  );
 
   return (
-    <div className="min-h-screen flex items-center justify-center relative font-sans">
-      {/* Background with gradient */}
-      <div className="fixed top-0 left-0 w-full h-full bg-gradient-to-br from-orange-100 to-orange-50 -z-20">
-        <div className="absolute top-0 left-0 w-full h-full bg-black/5 backdrop-blur-sm"></div>
-      </div>
-  
-      {/* Animated background elements */}
-      <div className="fixed top-0 left-0 w-full h-full -z-10">
-        <div className="absolute inset-0 bg-gradient-radial from-white/10 via-transparent to-transparent animate-pulse"></div>
-      </div>
-  
-      {/* Login Card */}
-      <div className="bg-white/95 backdrop-blur-xl rounded-3xl p-10 w-full max-w-md shadow-2xl border border-orange-200/50 animate-in slide-in-from-bottom-8 duration-700 shadow-inner">
-        {/* Header */}
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-20 h-20 bg-gradient-to-r from-orange-100 to-orange-50 text-muted-foreground rounded-2xl mb-6 shadow-inner border border-orange-200/30">
-            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M12 2L2 7L12 12L22 7L12 2Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-              <path d="M2 17L12 22L22 17" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-              <path d="M2 12L12 17L22 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-            </svg>
+    <div className="relative flex min-h-screen items-center justify-center bg-gradient-to-br from-orange-50 via-white to-orange-100 px-4 py-10">
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(255,244,230,0.6),_transparent_60%)]" />
+      <div className="relative z-10 w-full max-w-xl rounded-3xl border border-orange-100 bg-white/95 p-10 shadow-2xl backdrop-blur-xl sm:p-12">
+        <header className="mb-8 text-center">
+          <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-orange-500 via-orange-400 to-amber-500 shadow-lg">
+            <Shield className="h-7 w-7 text-white" />
           </div>
-          <h2 className="text-3xl font-bold text-foreground mb-2 tracking-tight">Admin Portal</h2>
-          <p className="text-muted-foreground text-base">Welcome back! Please sign in to your account.</p>
-        </div>
-  
-        {/* Form */}
-        <form onSubmit={handleLogin} className="flex flex-col gap-6">
-          {/* Email */}
-          <div className="flex flex-col">
-            <label htmlFor="email" className="text-sm font-semibold text-foreground mb-2 tracking-wide">
+          <h1 className="text-3xl font-semibold text-slate-900 md:text-4xl">
+            Admin Workspace
+          </h1>
+          <p className="mt-2 text-sm text-slate-600 md:text-base">
+            Sign in with your credentials to manage menu, locations, and more.
+          </p>
+        </header>
+
+        <form onSubmit={handleLogin} className="space-y-6">
+          <div className="space-y-2">
+            <Label htmlFor="email" className="text-sm font-medium text-slate-800">
               Email Address
-            </label>
-            <input
-              type="string"
+            </Label>
+            <Input
               id="email"
-              className="p-4 border-2 border-orange-200/50 rounded-2xl text-base bg-white/80 transition-all duration-200 outline-none focus:border-orange-300 focus:ring-4 focus:ring-orange-100/50 shadow-inner"
-              placeholder="Enter your email"
+              // type="email"
+              autoComplete="email"
+              placeholder="admin@restaurant.com"
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              onChange={(event) => setEmail(event.target.value)}
+              className="h-11 rounded-2xl border border-orange-100 bg-white/90 text-sm shadow-sm transition focus:border-orange-300 focus:ring-orange-200"
               required
             />
           </div>
-  
-          {/* Password */}
-          <div className="flex flex-col">
-            <label htmlFor="password" className="text-sm font-semibold text-foreground mb-2 tracking-wide">
+
+          <div className="space-y-2">
+            <Label htmlFor="password" className="text-sm font-medium text-slate-800">
               Password
-            </label>
-            <input
-              type="password"
+            </Label>
+            <Input
               id="password"
-              className="p-4 border-2 border-orange-200/50 rounded-2xl text-base bg-white/80 transition-all duration-200 outline-none focus:border-orange-300 focus:ring-4 focus:ring-orange-100/50 shadow-inner"
-              placeholder="Enter your password"
+              type="password"
+              autoComplete="current-password"
+              placeholder="••••••••"
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              onChange={(event) => setPassword(event.target.value)}
+              className="h-11 rounded-2xl border border-orange-100 bg-white/90 text-sm shadow-sm transition focus:border-orange-300 focus:ring-orange-200"
               required
             />
           </div>
-  
-  
-          {/* Submit Button */}
-          <button 
+
+          <Button
             type="submit"
-            disabled={isLoading}
-            className={`
-              bg-gradient-to-r from-orange-100 to-orange-50 text-muted-foreground border-2 border-orange-200/50 p-4 rounded-2xl text-base font-semibold 
-              cursor-pointer transition-all duration-300 relative overflow-hidden flex items-center justify-center gap-2 mt-2 shadow-inner
-              hover:-translate-y-0.5 hover:shadow-lg hover:shadow-orange-200/50 hover:border-orange-300
-              disabled:opacity-80 disabled:cursor-not-allowed disabled:hover:translate-y-0 disabled:hover:shadow-inner
-              ${isLoading ? 'opacity-80 cursor-not-allowed' : ''}
-            `}
+            disabled={isSubmitDisabled}
+            className={cn(
+              "inline-flex h-11 w-full items-center justify-center gap-2 rounded-full bg-gradient-to-r from-orange-500 to-orange-600 text-sm font-semibold text-white shadow-md transition",
+              "hover:from-orange-600 hover:to-orange-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-200",
+              isSubmitDisabled && "cursor-not-allowed opacity-60"
+            )}
           >
             {isLoading ? (
               <>
-                <div className="w-4 h-4 border-2 border-muted-foreground/30 border-t-muted-foreground rounded-full animate-spin"></div>
-                Signing in...
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Signing in…
               </>
             ) : (
-              'Sign In'
+              "Sign In"
             )}
-          </button>
+          </Button>
         </form>
+
+        <SocialLogin />
       </div>
-  
-      {/* Custom Animations */}
-      <style>
-        {`
-          @keyframes slide-in-from-bottom-8 {
-            from {
-              opacity: 0;
-              transform: translateY(32px);
-            }
-            to {
-              opacity: 1;
-              transform: translateY(0);
-            }
-          }
-          
-          .animate-in {
-            animation-fill-mode: both;
-          }
-          
-          .slide-in-from-bottom-8 {
-            animation: slide-in-from-bottom-8 0.7s ease-out;
-          }
-          
-          @media (max-width: 480px) {
-            .max-w-md {
-              margin: 16px;
-              padding: 32px 24px !important;
-              border-radius: 16px !important;
-            }
-          }
-        `}
-      </style>
     </div>
   );
-  
 };
 
 export default AdminLogin;
