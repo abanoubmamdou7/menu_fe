@@ -100,55 +100,69 @@ const Locations = () => {
       ) : (
         <div className="space-y-6">
           {sortedLocations.map((location) => (
-            <div
+            <article
               key={location.id}
-              className="bg-white p-6 rounded-lg shadow-md"
+              className="rounded-2xl border border-restaurant-primary/10 bg-white shadow-sm transition hover:shadow-md"
             >
-              <h3 className="text-xl font-bold text-restaurant-dark">
-                {location.name}
-              </h3>
-              <p className="text-gray-600 mt-2">
-                {location.address}, {location.city}
-              </p>
-              <div className="mt-4 flex flex-col space-y-2">
-                {location.is_open_24_7 ? (
-                  <div className="flex items-center text-green-600 font-medium">
-                    <Clock className="h-4 w-4 mr-2" />
-                    {t("open24_7")}
-                  </div>
-                ) : location.working_hours &&
-                  location.working_hours.length > 0 ? (
+              <div className="flex flex-col gap-6 p-6 sm:flex-row sm:items-start sm:justify-between">
+                <div className="flex-1 space-y-4">
                   <div className="space-y-1">
-                    <div className="flex items-center text-gray-700">
-                      <Clock className="h-4 w-4 mr-2" />
-                      <span className="font-medium">{t("workingHours")}</span>
-                    </div>
-                    <div className="grid grid-cols-2 gap-1 text-sm text-gray-600 ml-6">
-                      {location.working_hours.map((day) => (
-                        <div key={day.day} className="flex justify-between">
-                          <span>{day.day}:</span>
-                          <span>
-                            {day.closed
-                              ? t("closed")
-                              : `${day.open} - ${day.close}`}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
+                    <h3 className="text-xl font-semibold text-restaurant-dark sm:text-2xl">
+                      {location.name}
+                    </h3>
+                    <p className="text-sm leading-relaxed text-gray-600 sm:text-base">
+                      {location.address}, {location.city}
+                    </p>
                   </div>
-                ) : null}
 
-                <a
-                  href={location.map_link}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-2 text-restaurant-primary hover:text-restaurant-primary/80"
-                >
-                  <MapPin className="h-4 w-4" />
-                  <span>{t("viewOnMap")}</span>
-                </a>
+                  {location.is_open_24_7 ? (
+                    <div className="inline-flex items-center gap-2 rounded-full bg-green-50 px-4 py-2 text-sm font-medium text-green-700 sm:text-base">
+                      <Clock className="h-4 w-4" />
+                      {t("open24_7")}
+                    </div>
+                  ) : location.working_hours &&
+                    location.working_hours.length > 0 ? (
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-2 text-sm font-semibold text-gray-700 sm:text-base">
+                        <Clock className="h-4 w-4" />
+                        <span>{t("workingHours")}</span>
+                      </div>
+                      <div className="rounded-xl border border-gray-100 bg-gray-50/80 p-4">
+                        <dl className="grid grid-cols-1 gap-2 text-sm text-gray-600 sm:grid-cols-2">
+                          {location.working_hours.map((day) => (
+                            <div
+                              key={day.day}
+                              className="flex items-center justify-between gap-2"
+                            >
+                              <dt className="font-medium text-gray-700">
+                                {day.day}
+                              </dt>
+                              <dd className="text-right">
+                                {day.closed
+                                  ? t("closed")
+                                  : formatWorkingHours(day)}
+                              </dd>
+                            </div>
+                          ))}
+                        </dl>
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+
+                <div className="flex w-full flex-col gap-3 sm:w-48 sm:items-end">
+                  <a
+                    href={location.map_link}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-full border border-restaurant-primary px-4 py-2 text-sm font-semibold text-restaurant-primary transition hover:bg-restaurant-primary/10 sm:w-auto sm:text-base"
+                  >
+                    <MapPin className="h-4 w-4" />
+                    <span>{t("viewOnMap")}</span>
+                  </a>
+                </div>
               </div>
-            </div>
+            </article>
           ))}
         </div>
       )}
