@@ -26,11 +26,14 @@ const AdminSocialLinks = () => {
 
   return (
     <div>
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold">Manage Social Links</h1>
+      <div className="mb-6 flex items-center justify-between">
+        <h1 className="text-2xl font-bold text-slate-900">Manage Social Links</h1>
         <Dialog open={isOpen} onOpenChange={setIsOpen}>
           <DialogTrigger asChild>
-            <Button onClick={handleOpenDialog}>
+            <Button
+              onClick={handleOpenDialog}
+              className="bg-gradient-to-r from-orange-500 to-orange-600 text-white shadow-md transition hover:from-orange-600 hover:to-orange-700"
+            >
               <Plus className="mr-2 h-4 w-4" /> Add Social Link
             </Button>
           </DialogTrigger>

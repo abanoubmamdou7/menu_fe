@@ -20,15 +20,15 @@ const SocialLogin = () => {
     <div className="mt-8">
       <div className="relative">
         <div className="absolute inset-0 flex items-center">
-          <div className="w-full border-t border-gray-300"></div>
+          {/* <div className="w-full border-t border-gray-300"></div> */}
         </div>
         <div className="relative flex justify-center text-sm">
-          <span className="px-2 bg-restaurant-light text-gray-500">
+          {/* <span className="px-2 bg-restaurant-light text-gray-500">
             {t('orConnectWith')}
-          </span>
+          </span> */}
         </div>
       </div>
-      
+{/*       
       <div className="mt-6 grid grid-cols-2 gap-3">
         <Button 
           type="button" 
@@ -49,7 +49,7 @@ const SocialLogin = () => {
           <Mail className="h-4 w-4 text-gray-600" />
           Email
         </Button>
-      </div>
+      </div> */}
     </div>
   );
 };

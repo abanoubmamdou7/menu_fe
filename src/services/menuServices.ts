@@ -57,6 +57,7 @@ export interface MenuItem {
   saleable?: boolean | number | string | null;
   isSaleable?: boolean | number | string | null;
   is_saleable?: boolean | number | string | null;
+  branchCode?: string | null;
 }
 
 interface RawMenuItem {
@@ -109,6 +110,8 @@ interface RawMenuItem {
   isSaleable?: boolean | number | string | null;
   is_saleable?: boolean | number | string | null;
   photo?: string;
+  branch_code?: string | null;
+  branchCode?: string | null;
   [key: string]: unknown;
 }
 
@@ -297,6 +300,8 @@ const normalizeMenuItem = (
   const signatureDish =
     item?.signatureDish === true || item?.signature_dish === true;
   const spicy = item?.spicy === true;
+  const branchCode =
+    item?.branchCode ?? item?.branch_code ?? null;
 
   const normalizedImage =
     typeof image === "string"
@@ -384,6 +389,7 @@ const normalizeMenuItem = (
     signatureDish,
     spicy,
     tagIcons,
+    branchCode,
   };
 };
 
@@ -734,8 +740,9 @@ export const updateMenuItem = async (item: MenuItem) => {
   try {
     const imageValue = typeof item.image === 'string' ? item.image : '';
     const priceValue = item.price ? parseFloat(item.price) : null;
+    const branchFilter = item.branchCode?.trim();
     
-    const { error } = await supabase
+    let query = supabase
       .from("item_master")
       .update({
         itm_name: item.name,
@@ -753,6 +760,12 @@ export const updateMenuItem = async (item: MenuItem) => {
         spicy: item.spicy === true,
       })
       .eq("itm_code", item.id);
+
+    if (branchFilter) {
+      query = query.eq("branch_code", branchFilter);
+    }
+
+    const { error } = await query;
 
     if (error) throw error;
 

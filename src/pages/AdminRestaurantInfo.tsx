@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { useForm } from "react-hook-form";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -22,6 +22,7 @@ import {
   useRestaurantInfo,
   useSaveRestaurantInfo,
 } from "@/services/restaurantInfoService";
+import axios from "axios";
 import { toast } from "sonner";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
@@ -58,7 +59,6 @@ const AdminRestaurantInfo = () => {
   const [isUploading, setIsUploading] = useState(false);
   const [logoRemoved, setLogoRemoved] = useState(false);
   const [logoFile, setLogoFile] = useState<File | null>(null);
-  const [hasChanges, setHasChanges] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
 
   const form = useForm<RestaurantInfoFormValues>({
@@ -72,111 +72,77 @@ const AdminRestaurantInfo = () => {
     },
   });
 
-  useEffect(() => {
-    if (restaurantInfo) {
-      form.reset({
-        name: restaurantInfo.name || "",
-        slogan: restaurantInfo.slogan || "",
-        theme_id: restaurantInfo.theme_id || "",
-        show_all_category: restaurantInfo.show_all_category ?? true,
-        branch_code: restaurantInfo.branch_code || "",
-        style: restaurantInfo.style || "grid",
-      });
-      setLogoUrl(restaurantInfo.logo_url || null);
-      setLogoRemoved(false);
-      setLogoFile(null);
-      setLogoPreview(null);
-    }
-  }, [restaurantInfo, form]);
+  const initialFormValues = useMemo<RestaurantInfoFormValues>(
+    () => ({
+      name: restaurantInfo?.name || "",
+      slogan: restaurantInfo?.slogan || "",
+      theme_id: restaurantInfo?.theme_id || "",
+      show_all_category: restaurantInfo?.show_all_category ?? true,
+      branch_code: restaurantInfo?.branch_code || "",
+      style: restaurantInfo?.style || "grid",
+    }),
+    [restaurantInfo]
+  );
 
-  const watchedValues = form.watch();
+  const initialLogoUrl = useMemo(
+    () => restaurantInfo?.logo_url || null,
+    [restaurantInfo?.logo_url]
+  );
 
   useEffect(() => {
-    if (!restaurantInfo) return;
-    const initialValues = {
-      name: restaurantInfo.name || "",
-      slogan: restaurantInfo.slogan || "",
-      theme_id: restaurantInfo.theme_id || "",
-      show_all_category: restaurantInfo.show_all_category ?? true,
-      branch_code: restaurantInfo.branch_code || "",
-      style: restaurantInfo.style || "grid",
-    };
-
-    const hasFormChanges =
-      watchedValues.name !== initialValues.name ||
-      watchedValues.slogan !== initialValues.slogan ||
-      watchedValues.theme_id !== initialValues.theme_id ||
-      watchedValues.show_all_category !== initialValues.show_all_category ||
-      watchedValues.branch_code !== initialValues.branch_code ||
-      watchedValues.style !== initialValues.style ||
-      logoRemoved ||
-      logoFile !== null;
-
-    setHasChanges(hasFormChanges);
-  }, [watchedValues, logoRemoved, logoFile, restaurantInfo]);
-
-  const handleLogoChange = async (file: File | null) => {
+    form.reset(initialFormValues, { keepDirty: false });
+    setLogoUrl(initialLogoUrl);
     setLogoRemoved(false);
-    setLogoFile(file);
-    setHasChanges(true);
+    setLogoFile(null);
+    setLogoPreview((previous) => {
+      if (previous && previous.startsWith("blob:")) {
+        URL.revokeObjectURL(previous);
+      }
+      return initialLogoUrl;
+    });
+  }, [form, initialFormValues, initialLogoUrl]);
 
-    if (!file) {
-      if (logoPreview?.startsWith("blob:")) URL.revokeObjectURL(logoPreview);
-      setLogoPreview(null);
-      return;
-    }
+  const handleLogoChange = useCallback(
+    (file: File | null, _bytes?: number[]) => {
+      setLogoRemoved(false);
+      setLogoFile(file);
 
-    const previewUrl = URL.createObjectURL(file);
-    setLogoPreview(previewUrl);
-
-    try {
-      setIsUploading(true);
-      const formData = new FormData();
-      formData.append("image", file);
-
-      const res = await fetch(
-        `${import.meta.env.VITE_API_BASE_URL}/api/image/uploadImage`,
-        {
-          method: "POST",
-          credentials: "include",
-          body: formData,
-        }
-      );
-
-      if (res.status === 401) {
-        toast.error("Unauthorized. Login required.");
-        setLogoUrl(null);
+      if (!file) {
+        setLogoPreview((previous) => {
+          if (previous && previous.startsWith("blob:")) {
+            URL.revokeObjectURL(previous);
+          }
+          return initialLogoUrl;
+        });
+        setLogoUrl(initialLogoUrl);
         return;
       }
 
-      const result = await res.json();
-
-      if (res.ok && result?.fileUrls?.length > 0) {
-        setLogoUrl(result.fileUrls[0]);
-        toast.success("Logo uploaded successfully");
-      } else {
-        toast.error(result?.message || "Failed to upload logo");
-        setLogoUrl(null);
-      }
-    } catch (err) {
-      console.error("Upload error:", err);
-      toast.error("Upload error");
+      const previewUrl = URL.createObjectURL(file);
+      setLogoPreview((previous) => {
+        if (previous && previous.startsWith("blob:")) {
+          URL.revokeObjectURL(previous);
+        }
+        return previewUrl;
+      });
       setLogoUrl(null);
-    } finally {
-      setIsUploading(false);
-    }
-  };
+    },
+    [initialLogoUrl]
+  );
 
-  const handleRemoveLogo = () => {
-    if (logoPreview?.startsWith("blob:")) URL.revokeObjectURL(logoPreview);
-    setLogoPreview(null);
+  const handleRemoveLogo = useCallback(() => {
+    setLogoPreview((previous) => {
+      if (previous && previous.startsWith("blob:")) {
+        URL.revokeObjectURL(previous);
+      }
+      return null;
+    });
     setLogoUrl(null);
     setLogoRemoved(true);
     setLogoFile(null);
-    setHasChanges(true);
-  };
+  }, []);
 
-  const handleSyncAll = async () => {
+  const handleSyncAll = useCallback(async () => {
     try {
       setIsSyncing(true);
 
@@ -235,42 +201,79 @@ const AdminRestaurantInfo = () => {
     } finally {
       setIsSyncing(false);
     }
-  };
+}, []);
 
-  const onSubmit = async (values: RestaurantInfoFormValues) => {
-    try {
-      setIsUploading(true);
-      updateMutation.mutate(
-        {
+  const hasChanges = useMemo(
+    () => form.formState.isDirty || logoRemoved || logoFile !== null,
+    [form.formState.isDirty, logoRemoved, logoFile]
+  );
+
+  const onSubmit = useCallback(
+    async (values: RestaurantInfoFormValues) => {
+      if (!hasChanges) {
+        toast("No changes to save");
+        return;
+      }
+
+      try {
+        setIsUploading(true);
+
+        let uploadedLogoUrl = initialLogoUrl;
+        let removeLogo = logoRemoved;
+
+        if (logoFile) {
+          const formData = new FormData();
+          formData.append("image", logoFile);
+
+          const response = await axios.post(
+            `${import.meta.env.VITE_API_BASE_URL}/api/image/uploadImage`,
+            formData,
+            { withCredentials: true }
+          );
+
+          uploadedLogoUrl = response.data?.fileUrls?.[0] ?? null;
+          if (!uploadedLogoUrl) {
+            throw new Error("Logo upload failed. Please try again.");
+          }
+          removeLogo = false;
+        } else if (logoRemoved) {
+          uploadedLogoUrl = null;
+        }
+
+        await updateMutation.mutateAsync({
           name: values.name,
           slogan: values.slogan,
           themeId: values.theme_id || null,
-          logoUrl: logoRemoved ? null : logoUrl,
-          removeLogo: logoRemoved,
+          logoUrl: removeLogo ? null : uploadedLogoUrl,
+          removeLogo,
           show_all_category: values.show_all_category,
           branch_code: values.branch_code || null,
           style: values.style || "grid",
-        },
+        });
 
-        {
-          onSuccess: () => {
-            toast.success("Restaurant information updated successfully");
-            setIsUploading(false);
-            setLogoRemoved(false);
-            setHasChanges(false);
-            setLogoFile(null);
-          },
-          onError: (error) => {
-            toast.error(`Update failed: ${error.message}`);
-            setIsUploading(false);
-          },
-        }
-      );
-    } catch (error) {
-      toast.error(`Error: ${error.message}`);
-      setIsUploading(false);
-    }
-  };
+        toast.success("Restaurant information updated successfully");
+        setLogoRemoved(false);
+        setLogoFile(null);
+        setLogoUrl(uploadedLogoUrl);
+        setLogoPreview((previous) => {
+          if (previous && previous.startsWith("blob:")) {
+            URL.revokeObjectURL(previous);
+          }
+          return uploadedLogoUrl ?? null;
+        });
+      } catch (error) {
+        console.error("Update failed:", error);
+        toast.error(
+          error instanceof Error
+            ? error.message
+            : "Update failed. Please try again."
+        );
+      } finally {
+        setIsUploading(false);
+      }
+    },
+    [hasChanges, initialLogoUrl, logoFile, logoRemoved, updateMutation]
+  );
 
   useEffect(() => {
     return () => {
@@ -302,35 +305,37 @@ const AdminRestaurantInfo = () => {
   }
 
   return (
-    <div className="max-w-4xl mx-auto space-y-8 p-6">
-      <div className="space-y-2">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
-            <Store className="w-5 h-5 text-white" />
+    <div className="min-h-screen bg-gradient-to-br from-orange-50 via-white to-orange-100 px-4 py-10">
+      <div className="mx-auto flex max-w-5xl flex-col gap-8">
+        <div className="space-y-2">
+          <div className="flex items-center gap-3">
+            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-orange-500 via-orange-400 to-amber-500 shadow-lg">
+              <Store className="h-6 w-6 text-white" />
+            </div>
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900">
+                Restaurant Information
+              </h1>
+              <p className="text-gray-600">
+                Manage your brand presence, menu defaults, and syncing options.
+              </p>
+            </div>
           </div>
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900">
-              Restaurant Information
-            </h1>
-            <p className="text-gray-600">
-              Manage your restaurant's basic information and branding
-            </p>
-          </div>
+          {hasChanges && (
+            <div className="flex items-center gap-2 pt-2">
+              <Badge
+                variant="secondary"
+                className="border-amber-200 bg-amber-100 text-amber-800"
+              >
+                <AlertCircle className="mr-1 h-3 w-3" />
+                Unsaved changes
+              </Badge>
+            </div>
+          )}
         </div>
-        {hasChanges && (
-          <div className="flex items-center gap-2 mt-4">
-            <Badge
-              variant="secondary"
-              className="bg-amber-100 text-amber-800 border-amber-200"
-            >
-              <AlertCircle className="w-3 h-3 mr-1" /> Unsaved changes
-            </Badge>
-          </div>
-        )}
-      </div>
 
-      <Card className="border-0 shadow-lg bg-white">
-        <div className="p-8">
+        <Card className="border border-orange-100 bg-white/95 shadow-lg backdrop-blur-sm">
+          <div className="p-6 sm:p-8">
           {isLoading ? (
             <div className="space-y-8">
               <Skeleton className="h-4 w-24" />
@@ -484,7 +489,7 @@ const AdminRestaurantInfo = () => {
                 <div className="border-t pt-8">
                   <RestaurantLogoUpload
                     logoPreview={logoPreview}
-                    onLogoChange={handleLogoChange}
+                    onLogoChange={(file) => handleLogoChange(file)}
                     onRemoveLogo={handleRemoveLogo}
                   />
                 </div>
@@ -506,7 +511,7 @@ const AdminRestaurantInfo = () => {
                     disabled={
                       isUploading || updateMutation.isPending || !hasChanges
                     }
-                    className="min-w-32 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 shadow-lg hover:shadow-xl transition-all duration-200"
+                    className="min-w-32 bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 shadow-lg hover:shadow-xl transition-all duration-200"
                   >
                     {isUploading || updateMutation.isPending ? (
                       <>
@@ -527,7 +532,8 @@ const AdminRestaurantInfo = () => {
         </div>
       </Card>
     </div>
-  );
+  </div>
+);
 };
 
 export default AdminRestaurantInfo;

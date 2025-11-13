@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useMenuItems, uploadMenuItemPhoto, MenuCategory, MenuItem } from '@/services/menuServices';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
@@ -20,6 +20,11 @@ interface MenuItemFormData {
   photo_url: string;
   image: string;
   show_in_website: boolean;
+  fasting: boolean;
+  vegetarian: boolean;
+  healthyChoice: boolean;
+  signatureDish: boolean;
+  spicy: boolean;
 }
 
 const AdminMenuItems = () => {
@@ -123,20 +128,16 @@ const AdminMenuItems = () => {
     fetchCategories();
   }, [fetchCategories]);
 
-  const filteredItems = useMemo(() => {
-    if (!menuItems) return [];
-    
-    return menuItems
-      .filter(item => 
-        item.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-        item.description.toLowerCase().includes(searchTerm.toLowerCase())
-      )
-      .sort((a, b) => {
-        const priceA = parseFloat(String(a.sales_price)) || 0;
-        const priceB = parseFloat(String(b.sales_price)) || 0;
-        return priceB - priceA; // Ascending order by price
-      });
-  }, [menuItems, searchTerm]);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const handleRefresh = useCallback(async () => {
+    setIsRefreshing(true);
+    try {
+      await refetchItems();
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [refetchItems]);
 
   const handleAddItem = () => {
     setIsEditing(false);
@@ -192,7 +193,12 @@ const AdminMenuItems = () => {
             sales_price: data.sales_price ? parseFloat(data.sales_price) : null,
             itm_group_code: data.itm_group_code,
             image: data.image,
-            show_in_website: true
+            show_in_website: true,
+            fasting: data.fasting === true,
+            vegetarian: data.vegetarian === true,
+            healthy_choice: data.healthyChoice === true,
+            signature_dish: data.signatureDish === true,
+            spicy: data.spicy === true,
           })
           .eq('itm_code', data.itm_code);
         
@@ -211,7 +217,12 @@ const AdminMenuItems = () => {
             sales_price: data.sales_price ? parseFloat(data.sales_price) : null,
             itm_group_code: data.itm_group_code,
             image: data.image,
-            show_in_website: true
+            show_in_website: true,
+            fasting: data.fasting === true,
+            vegetarian: data.vegetarian === true,
+            healthy_choice: data.healthyChoice === true,
+            signature_dish: data.signatureDish === true,
+            spicy: data.spicy === true,
           });
 
         if (error) throw error;
@@ -233,24 +244,6 @@ const AdminMenuItems = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
-        <h2 className="text-2xl font-bold">Menu Items</h2>
-        <div className="flex gap-2 w-full md:w-auto">
-          <div className="relative flex-1 md:w-64">
-            {/* <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" /> */}
-            {/* <Input
-              placeholder="Search menu items..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-8"
-            /> */}
-          </div>
-          <Button onClick={handleAddItem}>
-            Add New Item
-          </Button>
-        </div>
-      </div>
-
       {categoryError && (
         <div className="border border-red-200 bg-red-50 text-red-600 text-sm rounded-md px-4 py-2">
           {categoryError}
@@ -258,9 +251,14 @@ const AdminMenuItems = () => {
       )}
 
       <MenuItemsTable 
-        items={filteredItems}
+        items={menuItems ?? []}
         onEditItem={handleEditItem}
         onDeleteItem={handleDeleteItem}
+        onAddItem={handleAddItem}
+        onRefresh={handleRefresh}
+        isRefreshing={isRefreshing}
+        searchTerm={searchTerm}
+        onSearchChange={setSearchTerm}
       />
 
       <MenuItemDialog

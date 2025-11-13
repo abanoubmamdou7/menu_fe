@@ -1,8 +1,11 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { useForm } from "react-hook-form";
+import axios from "axios";
+import { MenuItem, MenuCategory, updateMenuItem } from "@/services/menuServices";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { AspectRatio } from "@/components/ui/aspect-ratio";
 import {
   Form,
   FormControl,
@@ -11,7 +14,6 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
-import { AspectRatio } from "@/components/ui/aspect-ratio";
 import {
   Select,
   SelectContent,
@@ -19,15 +21,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  MenuItem,
-  MenuCategory,
-  handleMenuItemSubmit,
-  updateMenuItem,
-} from "@/services/menuServices";
 import { SheetClose, SheetFooter } from "@/components/ui/sheet";
-import { ImagePlus } from "lucide-react";
-import axios from "axios";
+import { UploadCloud, Trash2 } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 
 interface MenuItemFormData {
@@ -159,11 +154,12 @@ const MenuItemForm = ({
       });
 
       if (imageName) {
-        handlePhotoChange(imageName);
+        const url = `${import.meta.env.VITE_API_BASE_URL}/images/${imageName}`;
+        setPhotoPreview(url);
       } else {
         setPhotoPreview(null);
-        setPhotoFile(null);
       }
+      setPhotoFile(null);
     } else {
       form.reset({
         itm_code: "",
@@ -188,24 +184,61 @@ const MenuItemForm = ({
     }
   }, [currentItem, isEditing, form]);
 
-  const handlePhotoChange = (
-    eOrFilename: React.ChangeEvent<HTMLInputElement> | string | null
-  ) => {
-    if (!eOrFilename) return;
-
-    if (typeof eOrFilename === "string") {
-      const url = `${import.meta.env.VITE_API_BASE_URL}/images/${eOrFilename}`;
-      setPhotoPreview(url);
-      setPhotoFile(null);
-    } else {
-      const file = eOrFilename.target.files?.[0];
-      if (file) {
-        const previewUrl = URL.createObjectURL(file);
-        setPhotoFile(file);
-        setPhotoPreview(previewUrl);
+  const handlePhotoChange = useCallback(
+    (event: React.ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
+      if (!file) {
+        return;
       }
+
+      if (photoPreview && photoPreview.startsWith("blob:")) {
+        URL.revokeObjectURL(photoPreview);
+      }
+
+      const previewUrl = URL.createObjectURL(file);
+      setPhotoFile(file);
+      setPhotoPreview(previewUrl);
+      form.setValue("photo_url", "");
+      form.setValue("image", "");
+    },
+    [form, photoPreview]
+  );
+
+  const handleRemovePhoto = useCallback(() => {
+    if (photoPreview && photoPreview.startsWith("blob:")) {
+      URL.revokeObjectURL(photoPreview);
     }
-  };
+    setPhotoPreview(null);
+    setPhotoFile(null);
+    form.setValue("photo_url", "");
+    form.setValue("image", "");
+  }, [form, photoPreview]);
+
+  useEffect(() => {
+    return () => {
+      if (photoPreview && photoPreview.startsWith("blob:")) {
+        URL.revokeObjectURL(photoPreview);
+      }
+    };
+  }, [photoPreview]);
+
+  const uploadPhoto = useCallback(async (file: File) => {
+    const formData = new FormData();
+    formData.append("image", file);
+
+    const response = await axios.post(
+      `${import.meta.env.VITE_API_BASE_URL}/api/image/uploadImage`,
+      formData,
+      { withCredentials: true }
+    );
+
+    const fileUrls = response.data?.fileUrls;
+    if (!fileUrls || !fileUrls[0]) {
+      throw new Error("Image upload failed");
+    }
+
+    return fileUrls[0] as string;
+  }, []);
 
   const handleSubmit = async (data: MenuItemFormData) => {
     if (isSubmitting) return;
@@ -214,13 +247,11 @@ const MenuItemForm = ({
     try {
       if (!data.itm_code.trim()) {
         form.setError("itm_code", { message: "Item code is required" });
-        setIsSubmitting(false);
         return;
       }
 
       if (!data.itm_name.trim()) {
         form.setError("itm_name", { message: "Item name is required" });
-        setIsSubmitting(false);
         return;
       }
 
@@ -228,34 +259,25 @@ const MenuItemForm = ({
         form.setError("itm_group_code", {
           message: "Please select a category",
         });
-        setIsSubmitting(false);
         return;
       }
 
+      let uploadedImage = data.image;
       if (photoFile) {
-        const formData = new FormData();
-        formData.append("image", photoFile);
-
-        const uploadResponse = await axios.post(
-          `${import.meta.env.VITE_API_BASE_URL}/api/image/uploadImage`,
-          formData,
-          { withCredentials: true }
-        );
-
-        const fileUrls = uploadResponse.data?.fileUrls;
-        if (!fileUrls || !fileUrls[0]) {
-          throw new Error("Image upload failed");
-        }
-
-        data.image = fileUrls[0];
+        uploadedImage = await uploadPhoto(photoFile);
       }
 
-      await onSubmit(data, photoFile);
+      const payload: MenuItemFormData = {
+        ...data,
+        image: uploadedImage ?? "",
+        photo_url: uploadedImage ?? "",
+      };
+
+      await onSubmit(payload, photoFile);
 
       if (!isEditing) {
         form.reset();
-        setPhotoPreview(null);
-        setPhotoFile(null);
+        handleRemovePhoto();
       }
     } catch (error) {
       console.error("Form submission error:", error);
@@ -268,387 +290,394 @@ const MenuItemForm = ({
     fieldName: keyof MenuItemFormData,
     value: boolean
   ) => {
+    const previousValue = form.getValues(fieldName);
+    form.setValue(fieldName, value);
+    form.clearErrors(fieldName);
+
     const itemId = form.getValues("itm_code");
-    if (itemId) {
-      const updatedItem: MenuItem = {
-        id: itemId,
-        name: form.getValues("itm_name"),
-        nameAr: form.getValues("website_name_ar"),
-        description: form.getValues("website_description_en"),
-        descriptionAr: form.getValues("website_description_ar"),
-        price: form.getValues("sales_price"),
-        category: form.getValues("itm_group_code"),
-        image: form.getValues("image"),
-        fasting: fieldName === "fasting" ? value : form.getValues("fasting"),
-        vegetarian:
-          fieldName === "vegetarian" ? value : form.getValues("vegetarian"),
-        healthyChoice:
-          fieldName === "healthyChoice"
-            ? value
-            : form.getValues("healthyChoice"),
-        signatureDish:
-          fieldName === "signatureDish"
-            ? value
-            : form.getValues("signatureDish"),
-        spicy: fieldName === "spicy" ? value : form.getValues("spicy"),
-        order: 0,
-      };
+    if (!itemId) {
+      return;
+    }
+
+    const updatedItem: MenuItem = {
+      id: itemId,
+      name: form.getValues("itm_name"),
+      nameAr: form.getValues("website_name_ar"),
+      description: form.getValues("website_description_en"),
+      descriptionAr: form.getValues("website_description_ar"),
+      price: form.getValues("sales_price"),
+      category: form.getValues("itm_group_code"),
+      image: form.getValues("image"),
+      branchCode: currentItem?.branchCode ?? undefined,
+      fasting: fieldName === "fasting" ? value : form.getValues("fasting"),
+      vegetarian:
+        fieldName === "vegetarian" ? value : form.getValues("vegetarian"),
+      healthyChoice:
+        fieldName === "healthyChoice"
+          ? value
+          : form.getValues("healthyChoice"),
+      signatureDish:
+        fieldName === "signatureDish"
+          ? value
+          : form.getValues("signatureDish"),
+      spicy: fieldName === "spicy" ? value : form.getValues("spicy"),
+      order: currentItem?.order ?? 0,
+      itemOrder: currentItem?.itemOrder ?? currentItem?.order ?? 0,
+    };
+
+    try {
       await updateMenuItem(updatedItem);
-      form.setValue(fieldName, value);
+    } catch (error) {
+      console.error("Failed to update menu item toggle", error);
+      form.setValue(fieldName, previousValue);
     }
   };
+
+  const tagToggleFields: Array<{
+    name: keyof MenuItemFormData;
+    label: string;
+    helper: string;
+  }> = [
+    {
+      name: "fasting",
+      label: "Fasting Friendly",
+      helper: "Mark item as suitable for fasting customers.",
+    },
+    {
+      name: "vegetarian",
+      label: "Vegetarian",
+      helper: "Highlight as vegetarian option on the menu.",
+    },
+    {
+      name: "healthyChoice",
+      label: "Healthy Choice",
+      helper: "Promote as a lighter, health-forward dish.",
+    },
+    {
+      name: "signatureDish",
+      label: "Signature Dish",
+      helper: "Feature as one of the restaurant’s signature items.",
+    },
+    {
+      name: "spicy",
+      label: "Spicy",
+      helper: "Warn guests that this item brings the heat.",
+    },
+  ];
 
   return (
     <Form {...form}>
       <form
         onSubmit={form.handleSubmit(handleSubmit)}
-        className="space-y-4 py-4"
+        className="space-y-8 py-4"
       >
-        <FormField
-          control={form.control}
-          name="itm_code"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Item Code *</FormLabel>
-              <FormControl>
-                <Input
-                  placeholder="Enter unique item code"
-                  {...field}
-                  disabled={isEditing || isSubmitting}
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
+        <div className="space-y-6 rounded-2xl border border-orange-100 bg-white/90 p-6 shadow-sm">
+          <div>
+            <h3 className="text-lg font-semibold text-gray-900">
+              Basic Information
+            </h3>
+            <p className="text-sm text-muted-foreground">
+              Provide core details that appear across the menu experience.
+            </p>
+          </div>
 
-        <FormField
-          control={form.control}
-          name="itm_name"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Item Name *</FormLabel>
-              <FormControl>
-                <Input
-                  placeholder="Enter item name"
-                  {...field}
-                  disabled={isSubmitting}
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
-        <FormField
-          control={form.control}
-          name="website_name_en"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Display Name (English)</FormLabel>
-              <FormControl>
-                <Input
-                  placeholder="Name to display on website (English)"
-                  {...field}
-                  disabled={isSubmitting}
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
-        <FormField
-          control={form.control}
-          name="website_name_ar"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Display Name (Arabic)</FormLabel>
-              <FormControl>
-                <Input
-                  placeholder="Name to display on website (Arabic)"
-                  {...field}
-                  dir="rtl"
-                  disabled={isSubmitting}
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
-        <FormField
-          control={form.control}
-          name="website_description_en"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Description (English)</FormLabel>
-              <FormControl>
-                <Textarea
-                  placeholder="Item description (English)"
-                  {...field}
-                  className="min-h-[100px]"
-                  disabled={isSubmitting}
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
-        <FormField
-          control={form.control}
-          name="website_description_ar"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Description (Arabic)</FormLabel>
-              <FormControl>
-                <Textarea
-                  placeholder="Item description (Arabic)"
-                  {...field}
-                  className="min-h-[100px]"
-                  dir="rtl"
-                  disabled={isSubmitting}
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
-        <FormField
-          control={form.control}
-          name="sales_price"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Price</FormLabel>
-              <FormControl>
-                <Input
-                  type="number"
-                  placeholder="Price"
-                  {...field}
-                  step="0.01"
-                  min="0"
-                  disabled={isSubmitting}
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
-        <FormField
-          control={form.control}
-          name="itm_group_code"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Category *</FormLabel>
-              <Select
-                onValueChange={field.onChange}
-                value={field.value}
-                disabled={isSubmitting}
-              >
-                <FormControl>
-                  <SelectTrigger>
-                    <SelectValue
-                      placeholder={
-                        categoryOptions.length === 0
-                          ? "No categories available"
-                          : "Select a category"
-                      }
-                    />
-                  </SelectTrigger>
-                </FormControl>
-                <SelectContent>
-                  {categoryOptions.length === 0 ? (
-                    <SelectItem value="__empty" disabled>
-                      No categories available
-                    </SelectItem>
-                  ) : (
-                    categoryOptions.map((category) => (
-                      <SelectItem key={`${category.id}-${category.branchCode ?? "default"}`} value={category.id}>
-                        {getCategoryLabel(category)}
-                      </SelectItem>
-                    ))
-                  )}
-                </SelectContent>
-              </Select>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
-        <FormField
-          control={form.control}
-          name="photo_url"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Item Photo</FormLabel>
-              <FormControl>
-                <div className="space-y-4">
-                  {photoPreview && (
-                    <div className="w-full overflow-hidden rounded-md border">
-                      <AspectRatio ratio={16 / 9}>
-                        <img
-                          src={photoPreview}
-                          alt="Item preview"
-                          className="w-full h-full object-cover"
-                        />
-                      </AspectRatio>
-                    </div>
-                  )}
-
-                  <div className="flex items-center gap-2">
+          <div className="grid gap-4 md:grid-cols-2">
+            <FormField
+              control={form.control}
+              name="itm_code"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Item Code *</FormLabel>
+                  <FormControl>
                     <Input
-                      type="file"
-                      accept="image/*"
-                      onChange={handlePhotoChange}
-                      className="hidden"
-                      id="photo-upload"
+                      placeholder="Unique identifier visible internally"
+                      {...field}
+                      disabled={isEditing || isSubmitting}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="itm_name"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Menu Name *</FormLabel>
+                  <FormControl>
+                    <Input
+                      placeholder="Name shown to guests"
+                      {...field}
                       disabled={isSubmitting}
                     />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() =>
-                        document.getElementById("photo-upload")?.click()
-                      }
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="website_name_en"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Display Name (English)</FormLabel>
+                  <FormControl>
+                    <Input
+                      placeholder="Optional override for English menus"
+                      {...field}
                       disabled={isSubmitting}
-                    >
-                      <ImagePlus className="h-4 w-4 mr-2" />
-                      {photoPreview ? "Change Photo" : "Upload Photo"}
-                    </Button>
-                    {photoPreview && (
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="website_name_ar"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Display Name (Arabic)</FormLabel>
+                  <FormControl>
+                    <Input
+                      placeholder="Optional override for Arabic menus"
+                      {...field}
+                      dir="rtl"
+                      disabled={isSubmitting}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <FormField
+              control={form.control}
+              name="website_description_en"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Description (English)</FormLabel>
+                  <FormControl>
+                    <Textarea
+                      placeholder="Entice diners with an appealing description."
+                      {...field}
+                      className="min-h-[120px]"
+                      disabled={isSubmitting}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="website_description_ar"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Description (Arabic)</FormLabel>
+                  <FormControl>
+                    <Textarea
+                      placeholder="الوصف باللغة العربية"
+                      {...field}
+                      className="min-h-[120px]"
+                      dir="rtl"
+                      disabled={isSubmitting}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <FormField
+              control={form.control}
+              name="sales_price"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Price</FormLabel>
+                  <FormControl>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      placeholder="Set the menu price"
+                      {...field}
+                      disabled={isSubmitting}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="itm_group_code"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Category *</FormLabel>
+                  <Select
+                    onValueChange={field.onChange}
+                    value={field.value}
+                    disabled={isSubmitting || categoryOptions.length === 0}
+                  >
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue
+                          placeholder={
+                            categoryOptions.length === 0
+                              ? "No categories available"
+                              : "Choose a category"
+                          }
+                        />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      {categoryOptions.length === 0 ? (
+                        <SelectItem value="__empty" disabled>
+                          No categories available
+                        </SelectItem>
+                      ) : (
+                        categoryOptions.map((category) => (
+                          <SelectItem
+                            key={`${category.id}-${category.branchCode ?? "default"}`}
+                            value={category.id}
+                          >
+                            {getCategoryLabel(category)}
+                          </SelectItem>
+                        ))
+                      )}
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          </div>
+        </div>
+
+        <div className="space-y-4 rounded-2xl border border-orange-100 bg-orange-50/40 p-6">
+          <div>
+            <h3 className="text-lg font-semibold text-gray-900">Media</h3>
+            <p className="text-sm text-muted-foreground">
+              Upload a high-quality image to showcase this item across your menu.
+            </p>
+          </div>
+
+          <FormField
+            control={form.control}
+            name="photo_url"
+            render={({ field }) => (
+              <FormItem>
+                <FormControl>
+                  <div className="flex flex-col gap-4">
+                    {photoPreview ? (
+                      <div className="overflow-hidden rounded-xl border border-orange-100 bg-white shadow-sm">
+                        <AspectRatio ratio={16 / 9}>
+                          <img
+                            src={photoPreview}
+                            alt="Item preview"
+                            className="h-full w-full object-cover"
+                          />
+                        </AspectRatio>
+                      </div>
+                    ) : (
+                      <div className="flex min-h-[200px] items-center justify-center rounded-xl border border-dashed border-orange-200 bg-white/70 text-center text-sm text-muted-foreground">
+                        No image selected
+                      </div>
+                    )}
+
+                    <div className="flex flex-wrap items-center gap-3">
+                      <Input
+                        type="file"
+                        accept="image/*"
+                        onChange={handlePhotoChange}
+                        className="hidden"
+                        id="menu-item-photo-upload"
+                        disabled={isSubmitting}
+                      />
                       <Button
                         type="button"
                         variant="outline"
-                        className="text-red-500 hover:bg-red-50"
-                        onClick={() => {
-                          setPhotoPreview(null);
-                          setPhotoFile(null);
-                          field.onChange("");
-                        }}
+                        className="border-orange-200 text-orange-600 hover:border-orange-300 hover:bg-orange-50"
+                        onClick={() =>
+                          document.getElementById("menu-item-photo-upload")?.click()
+                        }
                         disabled={isSubmitting}
                       >
-                        Remove
+                        <UploadCloud className="mr-2 h-4 w-4" />
+                        {photoPreview ? "Replace Photo" : "Upload Photo"}
                       </Button>
-                    )}
+                      {photoPreview && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          className="text-red-500 hover:bg-red-50"
+                          onClick={handleRemovePhoto}
+                          disabled={isSubmitting}
+                        >
+                          <Trash2 className="mr-2 h-4 w-4" />
+                          Remove
+                        </Button>
+                      )}
+                    </div>
+                    <Input type="hidden" {...field} />
                   </div>
-                  <Input type="hidden" {...field} />
-                </div>
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-        <FormLabel>Tags</FormLabel>
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        </div>
 
-        <FormField
-          control={form.control}
-          name="fasting"
-          render={({ field }) => (
-            <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm">
-              <div className="space-y-0.5">
-                <FormLabel>Fasting</FormLabel>
-              </div>
-              <FormControl>
-                <Switch
-                  checked={field.value}
-                  onCheckedChange={(value) =>
-                    handleSwitchChange("fasting", value)
-                  }
-                  disabled={isSubmitting}
-                />
-              </FormControl>
-            </FormItem>
-          )}
-        />
+        <div className="space-y-4 rounded-2xl border border-orange-100 bg-white/90 p-6 shadow-sm">
+          <div>
+            <h3 className="text-lg font-semibold text-gray-900">Tags & Badges</h3>
+            <p className="text-sm text-muted-foreground">
+              Toggle the attributes that will surface badges on the guest-facing menu.
+            </p>
+          </div>
 
-        <FormField
-          control={form.control}
-          name="vegetarian"
-          render={({ field }) => (
-            <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm">
-              <div className="space-y-0.5">
-                <FormLabel>Vegetarian</FormLabel>
-              </div>
-              <FormControl>
-                <Switch
-                  checked={field.value}
-                  onCheckedChange={(value) =>
-                    handleSwitchChange("vegetarian", value)
-                  }
-                  disabled={isSubmitting}
-                />
-              </FormControl>
-            </FormItem>
-          )}
-        />
+          <div className="grid gap-3 md:grid-cols-2">
+            {tagToggleFields.map(({ name, label, helper }) => (
+              <FormField
+                key={name}
+                control={form.control}
+                name={name}
+                render={({ field }) => (
+                  <FormItem className="flex items-center justify-between rounded-xl border border-orange-100 bg-orange-50/40 px-4 py-3 shadow-sm">
+                    <div className="space-y-1">
+                      <FormLabel className="text-sm font-medium text-gray-900">
+                        {label}
+                      </FormLabel>
+                      <p className="text-xs text-muted-foreground">{helper}</p>
+                    </div>
+                    <FormControl>
+                      <Switch
+                        checked={field.value}
+                        onCheckedChange={(value) =>
+                          handleSwitchChange(name, value)
+                        }
+                        disabled={isSubmitting}
+                      />
+                    </FormControl>
+                  </FormItem>
+                )}
+              />
+            ))}
+          </div>
+        </div>
 
-        <FormField
-          control={form.control}
-          name="healthyChoice"
-          render={({ field }) => (
-            <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm">
-              <div className="space-y-0.5">
-                <FormLabel>Healthy Choice</FormLabel>
-              </div>
-              <FormControl>
-                <Switch
-                  checked={field.value}
-                  onCheckedChange={(value) =>
-                    handleSwitchChange("healthyChoice", value)
-                  }
-                  disabled={isSubmitting}
-                />
-              </FormControl>
-            </FormItem>
-          )}
-        />
-
-        <FormField
-          control={form.control}
-          name="signatureDish"
-          render={({ field }) => (
-            <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm">
-              <div className="space-y-0.5">
-                <FormLabel>Signature Dish</FormLabel>
-              </div>
-              <FormControl>
-                <Switch
-                  checked={field.value}
-                  onCheckedChange={(value) =>
-                    handleSwitchChange("signatureDish", value)
-                  }
-                  disabled={isSubmitting}
-                />
-              </FormControl>
-            </FormItem>
-          )}
-        />
-
-        <FormField
-          control={form.control}
-          name="spicy"
-          render={({ field }) => (
-            <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm">
-              <div className="space-y-0.5">
-                <FormLabel>Spicy</FormLabel>
-              </div>
-              <FormControl>
-                <Switch
-                  checked={field.value}
-                  onCheckedChange={(value) =>
-                    handleSwitchChange("spicy", value)
-                  }
-                  disabled={isSubmitting}
-                />
-              </FormControl>
-            </FormItem>
-          )}
-        />
-
-        <SheetFooter className="pt-4">
+        <SheetFooter className="pt-2">
           <SheetClose asChild>
             <Button
               variant="outline"
@@ -659,8 +688,12 @@ const MenuItemForm = ({
               Cancel
             </Button>
           </SheetClose>
-          <Button type="submit" disabled={isSubmitting}>
-            {isSubmitting ? "Saving..." : isEditing ? "Update" : "Create"}
+          <Button
+            type="submit"
+            disabled={isSubmitting}
+            className="bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700"
+          >
+            {isSubmitting ? "Saving..." : isEditing ? "Update Item" : "Create Item"}
           </Button>
         </SheetFooter>
       </form>

@@ -175,8 +175,8 @@ const CustomerFormDialog: React.FC<CustomerFormDialogProps> = ({
               onClick={() => setIsOpen(false)}
             >
               Cancel
-            </Button>
-            <Button type="submit" disabled={isPending}>
+            </Button >
+            <Button type="submit" disabled={isPending} className="inline-flex items-center gap-2 whitespace-nowrap rounded-full bg-gradient-to-r from-orange-500 to-orange-600 px-4 py-2 text-sm font-semibold text-white shadow-md transition hover:from-orange-600 hover:to-orange-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-200">
               {isPending ? 'Saving...' : customer ? 'Update' : 'Add Customer'}
             </Button>
           </DialogFooter>

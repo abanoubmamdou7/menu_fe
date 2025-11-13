@@ -27,8 +27,12 @@ const AdminLocations = () => {
         <h1 className="text-2xl font-bold">Manage Locations</h1>
         <Dialog open={isOpen} onOpenChange={setIsOpen}>
           <DialogTrigger asChild>
-            <Button onClick={handleOpenDialog}>
-              <Plus className="mr-2 h-4 w-4" /> Add Location
+            <Button
+              onClick={handleOpenDialog}
+              className="bg-gradient-to-r from-orange-500 to-orange-600 shadow-md hover:from-orange-600 hover:to-orange-700"
+            >
+              <Plus className="mr-2 h-4 w-4" />
+              Add Location
             </Button>
           </DialogTrigger>
           

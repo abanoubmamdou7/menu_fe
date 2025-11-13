@@ -1,213 +1,12 @@
-// import React, { useState, useMemo } from 'react';
-// import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-// import { Button } from '@/components/ui/button';
-// import { Pencil, Trash2, Share2, Facebook, Instagram, MessageCircle, Star, ArrowUp, ArrowDown } from 'lucide-react';
-// import { SocialLink } from '@/services/socialLinkServices';
-// import { mysqlClient } from '@/lib/mysql-client';
-// import { toast } from 'sonner';
-// import { Input } from '../../ui/input.tsx';
-
-
-// interface SocialLinksTableProps {
-//   socialLinks: SocialLink[];
-//   onEdit: (link: SocialLink) => void;
-//   onDelete: (id: string) => void;
-//   isLoading: boolean;
-// }
-
-// export const SocialLinksTable: React.FC<SocialLinksTableProps> = ({
-//   socialLinks,
-//   onEdit,
-//   onDelete,
-//   isLoading,
-// }) => {
-//   const [itemOrderInputs, setItemOrderInputs] = useState<Record<string, string>>({});
-//   const [sortConfig, setSortConfig] = useState<{
-//     key: 'platform' | 'url' | 'linksOrder';
-//     direction: 'ascending' | 'descending';
-//   }>({
-//     key: 'linksOrder',
-//     direction: 'ascending',
-//   });
-
-//   // Function to get the appropriate icon for each platform
-//   const getPlatformIcon = (platform: string) => {
-//     switch (platform.toLowerCase()) {
-//       case 'facebook':
-//         return <Facebook className="h-5 w-5 text-blue-600" />;
-//       case 'instagram':
-//         return <Instagram className="h-5 w-5 text-pink-600" />;
-//       case 'whatsapp':
-//         return <MessageCircle className="h-5 w-5 text-green-500" />;
-//       case 'google_review':
-//         return <Star className="h-5 w-5 text-yellow-500" />;
-//       default:
-//         return <Share2 className="h-5 w-5 text-gray-500" />;
-//     }
-//   };
-
-//   // Handle input change for order field
-//   const handleItemOrderChange = (id: string, value: string) => {
-//     setItemOrderInputs((prev) => ({ ...prev, [id]: value }));
-//   };
-
-//   // Handle saving the order to the backend
-//   const handleItemOrderSave = async (id: string) => {
-//     const rawInput = itemOrderInputs[id]?.trim();
-//     const itemOrder = parseInt(rawInput, 10);
-
-//     if (!rawInput || isNaN(itemOrder)) {
-//       toast.error('Please enter a valid number for link order');
-//       return;
-//     }
-
-//     try {
-//       const { error } = await mysqlClient
-//         .from('social_links')
-//         .eq('id', id)
-//         .update({ links_order: itemOrder });
-
-//       if (error) throw error;
-//       toast.success('Link order updated successfully');
-//     } catch (error: any) {
-//       toast.error('Failed to update link order: ' + error.message);
-//     }
-//   };
-
-//   // Handle sorting
-//   const requestSort = (key: 'platform' | 'url' | 'linksOrder') => {
-//     setSortConfig((prev) => ({
-//       key,
-//       direction: prev.key === key && prev.direction === 'ascending' ? 'descending' : 'ascending',
-//     }));
-//   };
-
-//   // Get sort icon for column headers
-//   const getSortIcon = (key: string) => {
-//     if (sortConfig.key !== key) return null;
-//     return sortConfig.direction === 'ascending' ? (
-//       <ArrowUp className="ml-1 h-3 w-3" />
-//     ) : (
-//       <ArrowDown className="ml-1 h-3 w-3" />
-//     );
-//   };
-
-//   // Sort social links
-//   const sortedLinks = useMemo(() => {
-//     return [...socialLinks].sort((a, b) => {
-//       let aValue: number | string, bValue: number | string;
-
-//       if (sortConfig.key === 'linksOrder') {
-//         aValue = a.linksOrder ?? 0;
-//         bValue = b.linksOrder ?? 0;
-//       } else if (sortConfig.key === 'platform') {
-//         aValue = (a.platform || '').toLowerCase();
-//         bValue = (b.platform || '').toLowerCase();
-//       } else {
-//         // url
-//         aValue = (a.url || '').toLowerCase();
-//         bValue = (b.url || '').toLowerCase();
-//       }
-
-//       if (aValue < bValue) return sortConfig.direction === 'ascending' ? -1 : 1;
-//       if (aValue > bValue) return sortConfig.direction === 'ascending' ? 1 : -1;
-//       return 0;
-//     });
-//   }, [socialLinks, sortConfig]);
-
-//   if (isLoading) {
-//     return <div className="text-center py-4">Loading...</div>;
-//   }
-
-//   if (sortedLinks.length === 0) {
-//     return (
-//       <div className="text-center py-8">
-//         <Share2 className="mx-auto h-12 w-12 text-gray-400" />
-//         <h3 className="mt-2 text-lg font-medium">No social links found</h3>
-//         <p className="mt-1 text-gray-500">Get started by adding a new social link.</p>
-//       </div>
-//     );
-//   }
-
-//   return (
-//     <div className="border rounded-md overflow-hidden">
-//       <Table>
-//         <TableHeader>
-//           <TableRow>
-//             <TableHead className="w-[80px]">Icon</TableHead>
-//             <TableHead className="cursor-pointer" onClick={() => requestSort('platform')}>
-//               <div className="flex items-center">Platform {getSortIcon('platform')}</div>
-//             </TableHead>
-//             <TableHead className="cursor-pointer" onClick={() => requestSort('url')}>
-//               <div className="flex items-center">URL {getSortIcon('url')}</div>
-//             </TableHead>
-//             <TableHead className="cursor-pointer" onClick={() => requestSort('linksOrder')}>
-//               <div className="flex items-center">Link Order {getSortIcon('linksOrder')}</div>
-//             </TableHead>
-//             <TableHead className="w-[150px]">Actions</TableHead>
-//           </TableRow>
-//         </TableHeader>
-//         <TableBody>
-//           {sortedLinks.map((link) => (
-//             <TableRow key={link.id}>
-//               <TableCell>{getPlatformIcon(link.platform)}</TableCell>
-//               <TableCell className="font-medium">{link.platform}</TableCell>
-//               <TableCell className="truncate max-w-xs">
-//                 <a
-//                   href={link.url}
-//                   target="_blank"
-//                   rel="noopener noreferrer"
-//                   className="text-blue-600 hover:underline"
-//                 >
-//                   {link.url}
-//                 </a>
-//               </TableCell>
-//               <TableCell>
-//                 <Input
-//                   type="number"
-//                   value={itemOrderInputs[link.id] ?? link.linksOrder?.toString() ?? ''}
-//                   onChange={(e) => handleItemOrderChange(link.id, e.target.value)}
-//                   onBlur={() => handleItemOrderSave(link.id)}
-//                   onKeyDown={(e) => {
-//                     if (e.key === 'Enter') handleItemOrderSave(link.id);
-//                   }}
-//                   className="w-20"
-//                   aria-label={`Set order for ${link.platform} link`}
-//                 />
-//               </TableCell>
-//               <TableCell>
-//                 <div className="flex space-x-2">
-//                   <Button
-//                     variant="outline"
-//                     size="icon"
-//                     onClick={() => onEdit(link)}
-//                     aria-label={`Edit ${link.platform} link`}
-//                   >
-//                     <Pencil className="h-4 w-4" />
-//                   </Button>
-//                   <Button
-//                     variant="outline"
-//                     size="icon"
-//                     onClick={() => onDelete(link.id)}
-//                     aria-label={`Delete ${link.platform} link`}
-//                   >
-//                     <Trash2 className="h-4 w-4" />
-//                   </Button>
-//                 </div>
-//               </TableCell>
-//             </TableRow>
-//           ))}
-//         </TableBody>
-//       </Table>
-//     </div>
-//   );
-// };
-import React, { useState, useMemo, useCallback, useEffect } from 'react';
+import React, { useState, useMemo, useCallback, useEffect, memo } from 'react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Separator } from '@/components/ui/separator';
+import { Skeleton } from '@/components/ui/skeleton';
 import { 
   Pencil, 
   Trash2, 
@@ -219,8 +18,6 @@ import {
   ArrowUp, 
   ArrowDown, 
   Palette,
-  Eye,
-  EyeOff,
   Check,
   X,
   Copy,
@@ -288,32 +85,38 @@ const ColorPicker: React.FC<{
               type="button"
               onClick={() => setIsOpen(!isOpen)}
               disabled={isLoading}
-              className="flex items-center gap-2 px-3 py-2 border rounded-md hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className={`flex items-center gap-2 rounded-xl border border-orange-100 bg-white/85 px-3 py-1.5 text-xs font-medium text-slate-700 shadow-sm transition hover:border-orange-200 hover:bg-orange-50 disabled:cursor-not-allowed disabled:opacity-60`}
               aria-label={label}
             >
               <div 
-                className="w-5 h-5 rounded border border-gray-300 shadow-sm" 
+                className="h-4 w-4 rounded-md border border-orange-200 shadow-sm"
                 style={{ backgroundColor: value || '#ffffff' }}
               />
-              <Palette className="h-4 w-4" />
-              {isLoading && <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-blue-500" />}
+              <Palette className="h-3.5 w-3.5 text-orange-500" />
+              {isLoading && (
+                <div className="h-3 w-3 animate-spin rounded-full border-b-2 border-orange-500" />
+              )}
             </button>
             
             {isOpen && (
-              <div className="absolute z-20 mt-2 p-4 bg-white border rounded-lg shadow-xl min-w-[280px] max-w-[320px]">
+              <div className="absolute right-0 z-30 mt-2 min-w-[280px] max-w-[320px] rounded-2xl border border-orange-100 bg-white/95 p-4 shadow-2xl backdrop-blur-md">
                 <div className="mb-4">
-                  <h4 className="text-sm font-medium mb-3">Color Palette</h4>
+                  <h4 className="mb-3 text-sm font-semibold text-slate-900">Color Palette</h4>
                   {Object.entries(COLOR_PALETTE).map(([category, colors]) => (
                     <div key={category} className="mb-3">
-                      <p className="text-xs text-gray-500 mb-2 capitalize">{category}</p>
+                      <p className="mb-2 text-[11px] uppercase tracking-wide text-orange-500">
+                        {category}
+                      </p>
                       <div className="grid grid-cols-5 gap-2">
                         {colors.map((color) => (
                           <button
                             key={color}
                             type="button"
                             onClick={() => handleColorSelect(color)}
-                            className={`w-8 h-8 rounded border-2 hover:scale-110 transition-transform shadow-sm ${
-                              value === color ? 'border-gray-800 ring-2 ring-blue-500' : 'border-gray-300'
+                            className={`h-7 w-7 rounded-full border-2 transition-transform duration-150 hover:scale-110 ${
+                              value === color
+                                ? 'border-orange-600 ring-2 ring-orange-300'
+                                : 'border-orange-100'
                             }`}
                             style={{ backgroundColor: color }}
                             aria-label={`Select color ${color}`}
@@ -324,15 +127,17 @@ const ColorPicker: React.FC<{
                   ))}
                 </div>
                 
-                <div className="border-t pt-3">
-                  <label className="block text-sm font-medium mb-2">Custom Color:</label>
+                <div className="border-t border-orange-100 pt-3">
+                  <label className="mb-2 block text-xs font-semibold text-slate-800">
+                    Custom Color
+                  </label>
                   <div className="flex gap-2">
                     <Input
                       type="text"
                       value={customColor}
                       onChange={(e) => setCustomColor(e.target.value)}
                       placeholder="#RRGGBB"
-                      className="flex-1 text-sm font-mono"
+                      className="flex-1 rounded-lg border-orange-100 bg-white/90 text-xs font-mono"
                       maxLength={7}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') {
@@ -348,15 +153,15 @@ const ColorPicker: React.FC<{
                       <Check className="h-3 w-3" />
                     </Button>
                   </div>
-                  <p className="text-xs text-gray-500 mt-1">Format: #RRGGBB (e.g., #FF0000)</p>
+                  <p className="mt-1 text-[11px] text-slate-500">Format: #RRGGBB (e.g., #FF0000)</p>
                 </div>
                 
-                <div className="flex gap-2 mt-4">
+                <div className="mt-4 flex gap-2">
                   <Button
                     variant="outline"
                     size="sm"
                     onClick={() => setIsOpen(false)}
-                    className="flex-1"
+                    className="flex-1 border-orange-100 text-slate-600 hover:bg-orange-50"
                   >
                     <X className="h-3 w-3 mr-1" />
                     Cancel
@@ -368,7 +173,7 @@ const ColorPicker: React.FC<{
                       navigator.clipboard.writeText(value);
                       toast.success('Color copied to clipboard!');
                     }}
-                    className="flex-1"
+                    className="flex-1 border-orange-100 text-slate-600 hover:bg-orange-50"
                   >
                     <Copy className="h-3 w-3 mr-1" />
                     Copy
@@ -378,7 +183,7 @@ const ColorPicker: React.FC<{
             )}
           </div>
         </TooltipTrigger>
-        <TooltipContent>
+        <TooltipContent className="text-xs">
           <p>{label}</p>
         </TooltipContent>
       </Tooltip>
@@ -386,8 +191,11 @@ const ColorPicker: React.FC<{
   );
 };
 
+const MemoizedColorPicker = memo(ColorPicker);
+MemoizedColorPicker.displayName = 'ColorPicker';
+
 // Enhanced Social Links Table Component
-export const SocialLinksTable: React.FC<SocialLinksTableProps> = ({
+const SocialLinksTableComponent: React.FC<SocialLinksTableProps> = ({
   socialLinks,
   onEdit,
   onDelete,
@@ -612,260 +420,479 @@ export const SocialLinksTable: React.FC<SocialLinksTableProps> = ({
     }
   }, []);
 
-  if (isLoading) {
-    return (
-      <div className="text-center py-8">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto"></div>
-        <p className="mt-2 text-gray-500">Loading social links...</p>
-      </div>
-    );
-  }
+  const totalLinks = socialLinks.length;
+  const filteredCount = filteredAndSortedLinks.length;
+  const hasSearch = searchTerm.trim().length > 0;
+  const showEmptyState = !isLoading && totalLinks === 0;
+  const showFilteredEmptyState = !isLoading && totalLinks > 0 && filteredCount === 0;
+  const columnCount = 8;
 
-  if (socialLinks.length === 0) {
-    return (
-      <div className="text-center py-12 bg-gray-50 rounded-lg">
-        <Share2 className="mx-auto h-16 w-16 text-gray-400" />
-        <h3 className="mt-4 text-xl font-medium text-gray-900">No social links found</h3>
-        <p className="mt-2 text-gray-500">Get started by adding your first social media link.</p>
-      </div>
-    );
-  }
+  useEffect(() => {
+    setColorInputs((prev) => {
+      const next = { ...prev };
+      const linkIds = new Set(socialLinks.map((link) => link.id));
+
+      Object.keys(next).forEach((id) => {
+        if (!linkIds.has(id)) {
+          delete next[id];
+        }
+      });
+
+      socialLinks.forEach((link) => {
+        if (!next[link.id]) {
+          next[link.id] = {
+            bgColor: link.bgColor ?? '#ffffff',
+            textColor: link.textColor ?? '#1f2937',
+            borderColor: link.borderColor ?? '#e2e8f0',
+          };
+        }
+      });
+
+      return next;
+    });
+  }, [socialLinks]);
+
+  useEffect(() => {
+    setItemOrderInputs((prev) => {
+      const next: Record<string, string> = {};
+      socialLinks.forEach((link) => {
+        if (prev[link.id] !== undefined) {
+          next[link.id] = prev[link.id];
+        }
+      });
+      return next;
+    });
+  }, [socialLinks]);
+
+  const handleOpenLink = useCallback((url: string) => {
+    window.open(url, '_blank', 'noopener,noreferrer');
+  }, []);
+
+  const handleClearSearch = useCallback(() => {
+    setSearchTerm('');
+  }, []);
+
+  const skeletonRows = useMemo(
+    () =>
+      Array.from({ length: 4 }).map((_, index) => (
+        <TableRow key={`social-skeleton-${index}`}>
+          <TableCell>
+            <div className="flex justify-center">
+              <Skeleton className="h-9 w-9 rounded-full" />
+            </div>
+          </TableCell>
+          <TableCell>
+            <Skeleton className="h-4 w-36 rounded-full" />
+          </TableCell>
+          <TableCell>
+            <Skeleton className="h-4 w-64 rounded-full" />
+          </TableCell>
+          <TableCell>
+            <Skeleton className="h-8 w-16 rounded-lg" />
+          </TableCell>
+          <TableCell>
+            <Skeleton className="h-8 w-28 rounded-xl" />
+          </TableCell>
+          <TableCell>
+            <Skeleton className="h-8 w-28 rounded-xl" />
+          </TableCell>
+          <TableCell>
+            <Skeleton className="h-8 w-28 rounded-xl" />
+          </TableCell>
+          <TableCell>
+            <div className="flex justify-end gap-2">
+              <Skeleton className="h-8 w-8 rounded-full" />
+              <Skeleton className="h-8 w-8 rounded-full" />
+            </div>
+          </TableCell>
+        </TableRow>
+      )),
+    []
+  );
+
+  const renderTableRows = () => {
+    if (isLoading) {
+      return skeletonRows;
+    }
+
+    if (showEmptyState) {
+      return (
+        <TableRow>
+          <TableCell colSpan={columnCount} className="py-12 text-center">
+            <div className="flex flex-col items-center gap-3 text-slate-500">
+              <Share2 className="h-10 w-10 text-orange-300" />
+              <div>
+                <p className="text-sm font-medium text-slate-700">
+                  No social links yet
+                </p>
+                <p className="text-xs text-slate-500">
+                  Add your first platform to start directing guests.
+                </p>
+              </div>
+            </div>
+          </TableCell>
+        </TableRow>
+      );
+    }
+
+    if (showFilteredEmptyState) {
+      return (
+        <TableRow>
+          <TableCell colSpan={columnCount} className="py-10 text-center">
+            <div className="flex flex-col items-center gap-2 text-slate-500">
+              <Search className="h-8 w-8 text-orange-300" />
+              <p className="text-sm font-medium text-slate-700">
+                Nothing matches “{searchTerm}”
+              </p>
+              <p className="text-xs text-slate-500">
+                Try a different keyword or clear the search filter.
+              </p>
+            </div>
+          </TableCell>
+        </TableRow>
+      );
+    }
+
+    return filteredAndSortedLinks.map((link) => {
+      const platformLabel = link.platform.replace(/_/g, ' ');
+      const currentBgColor = getCurrentColor(link.id, 'bgColor');
+      const currentTextColor = getCurrentColor(link.id, 'textColor');
+      const currentBorderColor = getCurrentColor(link.id, 'borderColor');
+
+      return (
+        <TableRow key={link.id} className="hover:bg-orange-50/35 transition-colors">
+          <TableCell className="py-4">
+            <div className="flex items-center justify-center">
+              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-orange-100 via-orange-50 to-white shadow-inner">
+                {getPlatformIcon(link.platform)}
+              </div>
+            </div>
+          </TableCell>
+          <TableCell className="font-medium text-slate-800">
+            <div className="flex items-center gap-2">
+              <span className="capitalize">{platformLabel}</span>
+              <Badge
+                variant="outline"
+                className="border-orange-200 bg-orange-50 px-2 text-[11px] uppercase tracking-wide text-orange-600"
+              >
+                {link.platform}
+              </Badge>
+            </div>
+          </TableCell>
+          <TableCell>
+            <div className="flex items-center gap-2">
+              <a
+                href={link.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={`truncate text-sm transition-colors ${
+                  isValidUrl(link.url) ? 'text-orange-600 hover:text-orange-700' : 'text-red-500'
+                }`}
+                title={link.url}
+              >
+                {link.url}
+              </a>
+              <div className="flex items-center gap-1">
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => copyUrl(link.url)}
+                        className="h-7 w-7 rounded-full p-0 text-orange-600 hover:bg-orange-50"
+                      >
+                        <Copy className="h-3.5 w-3.5" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent className="text-xs">
+                      <p>Copy URL</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleOpenLink(link.url)}
+                        className="h-7 w-7 rounded-full p-0 text-orange-600 hover:bg-orange-50"
+                      >
+                        <ExternalLink className="h-3.5 w-3.5" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent className="text-xs">
+                      <p>Open in new tab</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </div>
+            </div>
+          </TableCell>
+          <TableCell>
+            <div className="flex items-center gap-2">
+              <Input
+                type="number"
+                min="0"
+                value={itemOrderInputs[link.id] ?? link.linksOrder?.toString() ?? ''}
+                onChange={(event) => handleItemOrderChange(link.id, event.target.value)}
+                onBlur={() => handleItemOrderSave(link.id)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    event.preventDefault();
+                    handleItemOrderSave(link.id);
+                  }
+                }}
+                className="h-8 w-16 rounded-lg border border-orange-100 bg-white/90 text-center text-sm"
+                disabled={loadingStates[`${link.id}-order`]}
+                aria-label={`Set order for ${link.platform} link`}
+              />
+              {loadingStates[`${link.id}-order`] && (
+                <div className="flex h-4 w-4 items-center justify-center">
+                  <div className="h-4 w-4 animate-spin rounded-full border-b-2 border-orange-500" />
+                </div>
+              )}
+            </div>
+          </TableCell>
+          <TableCell>
+            <div className="flex items-center gap-2">
+              <div
+                className="h-6 w-6 rounded-full border border-orange-100 shadow-sm"
+                style={{ backgroundColor: currentBgColor }}
+              />
+              <MemoizedColorPicker
+                value={currentBgColor}
+                onChange={(color) => handleColorChange(link.id, 'bgColor', color)}
+                onSave={() => handleColorSave(link.id, 'bgColor')}
+                label={`Set background color for ${link.platform} link`}
+                isLoading={loadingStates[`${link.id}-bgColor`]}
+              />
+            </div>
+          </TableCell>
+          <TableCell>
+            <div className="flex items-center gap-2">
+              <span
+                className="flex h-6 w-6 items-center justify-center rounded-full border border-orange-100 text-xs font-semibold"
+                style={{ color: currentTextColor }}
+              >
+                Aa
+              </span>
+              <MemoizedColorPicker
+                value={currentTextColor}
+                onChange={(color) => handleColorChange(link.id, 'textColor', color)}
+                onSave={() => handleColorSave(link.id, 'textColor')}
+                label={`Set text color for ${link.platform} link`}
+                isLoading={loadingStates[`${link.id}-textColor`]}
+              />
+            </div>
+          </TableCell>
+          <TableCell>
+            <div className="flex items-center gap-2">
+              <div
+                className="h-6 w-6 rounded-full border-2 border-orange-100"
+                style={{ borderColor: currentBorderColor }}
+              />
+              <MemoizedColorPicker
+                value={currentBorderColor}
+                onChange={(color) => handleColorChange(link.id, 'borderColor', color)}
+                onSave={() => handleColorSave(link.id, 'borderColor')}
+                label={`Set border color for ${link.platform} link`}
+                isLoading={loadingStates[`${link.id}-borderColor`]}
+              />
+            </div>
+          </TableCell>
+          <TableCell>
+            <div className="flex justify-end gap-2">
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => onEdit(link)}
+                      className="h-8 w-8 rounded-full border-orange-100 text-orange-600 hover:border-orange-200 hover:bg-orange-50"
+                      aria-label={`Edit ${link.platform} link`}
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent className="text-xs">
+                    <p>Edit link</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => onDelete(link.id)}
+                      className="h-8 w-8 rounded-full border-orange-100 text-red-500 hover:border-red-200 hover:bg-red-50"
+                      aria-label={`Delete ${link.platform} link`}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent className="text-xs">
+                    <p>Delete link</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            </div>
+          </TableCell>
+        </TableRow>
+      );
+    });
+  };
 
   return (
-    <div className="space-y-4">
-      {/* Enhanced Search and Filter Controls */}
-      <div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
-        <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-          <Input
-            type="text"
-            placeholder="Search platforms or URLs..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="pl-10"
-          />
+    <div className="space-y-5">
+      <div className="flex flex-col gap-3 rounded-3xl border border-orange-100 bg-white/90 p-6 shadow-lg backdrop-blur-sm sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-1">
+          <div className="flex items-center gap-3">
+            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-orange-500 via-orange-400 to-amber-500 shadow-lg">
+              <Share2 className="h-5 w-5 text-white" />
+            </div>
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <h2 className="text-xl font-semibold text-slate-900">Social Links</h2>
+                <Badge
+                  variant="outline"
+                  className="border-orange-200 bg-orange-50 px-2 py-0.5 text-[11px] font-medium uppercase tracking-wide text-orange-600"
+                >
+                  Manage
+                </Badge>
+              </div>
+              <p className="text-sm text-slate-600">
+                Manage your platforms, ordering, and brand colors for shared buttons.
+              </p>
+            </div>
+          </div>
         </div>
         <div className="flex items-center gap-2">
-          <Badge variant="secondary">
-            {filteredAndSortedLinks.length} of {socialLinks.length} links
+          <Badge
+            variant="outline"
+            className="border-orange-200 bg-orange-50 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-orange-600"
+          >
+            Total: {totalLinks}
+          </Badge>
+          {hasSearch && (
+            <Badge
+              variant="outline"
+              className="border-orange-200 bg-orange-50 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-orange-600"
+            >
+              Filtered
+            </Badge>
+          )}
+        </div>
+      </div>
+
+      <div className="rounded-3xl border border-orange-100 bg-white/85 p-5 shadow-sm">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="relative w-full sm:max-w-md">
+            <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-orange-300" />
+            <Input
+              type="text"
+              placeholder="Search platforms or URLs..."
+              value={searchTerm}
+              onChange={(event) => setSearchTerm(event.target.value)}
+              className="h-10 rounded-xl border border-orange-100 bg-white/85 pl-10 text-sm focus:border-orange-300 focus:ring-orange-200"
+            />
+            {hasSearch && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={handleClearSearch}
+                className="absolute right-1.5 top-1/2 h-7 -translate-y-1/2 rounded-full border border-orange-100 px-3 text-xs text-orange-600 hover:border-orange-200 hover:bg-orange-50"
+              >
+                Clear
+              </Button>
+            )}
+          </div>
+          <Badge
+            variant="outline"
+            className="border-orange-200 bg-orange-50 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-orange-600"
+          >
+            Showing {Math.min(filteredCount, totalLinks)} of {totalLinks}
           </Badge>
         </div>
-      </div>
 
-      {/* Enhanced Table */}
-      <div className="border rounded-lg overflow-hidden shadow-sm">
-        <Table>
-          <TableHeader>
-            <TableRow className="bg-gray-50">
-              <TableHead className="w-[80px]">Icon</TableHead>
-              <TableHead className="cursor-pointer hover:bg-gray-100 transition-colors" onClick={() => requestSort('platform')}>
-                <div className="flex items-center font-medium">
-                  Platform {getSortIcon('platform')}
-                </div>
-              </TableHead>
-              <TableHead className="cursor-pointer hover:bg-gray-100 transition-colors" onClick={() => requestSort('url')}>
-                <div className="flex items-center font-medium">
-                  URL {getSortIcon('url')}
-                </div>
-              </TableHead>
-              <TableHead className="cursor-pointer hover:bg-gray-100 transition-colors" onClick={() => requestSort('linksOrder')}>
-                <div className="flex items-center font-medium">
-                  Order {getSortIcon('linksOrder')}
-                </div>
-              </TableHead>
-              <TableHead className="cursor-pointer hover:bg-gray-100 transition-colors" onClick={() => requestSort('bgColor')}>
-                <div className="flex items-center font-medium">
-                  Background {getSortIcon('bgColor')}
-                </div>
-              </TableHead>
-              <TableHead className="cursor-pointer hover:bg-gray-100 transition-colors" onClick={() => requestSort('textColor')}>
-                <div className="flex items-center font-medium">
-                  Text {getSortIcon('textColor')}
-                </div>
-              </TableHead>
-              <TableHead className="cursor-pointer hover:bg-gray-100 transition-colors" onClick={() => requestSort('borderColor')}>
-                <div className="flex items-center font-medium">
-                  Border {getSortIcon('borderColor')}
-                </div>
-              </TableHead>
-              <TableHead className="w-[180px]">Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {filteredAndSortedLinks.map((link) => (
-              <TableRow key={link.id} className="hover:bg-gray-50 transition-colors">
-                <TableCell className="text-center">
-                  {getPlatformIcon(link.platform)}
-                </TableCell>
-                <TableCell className="font-medium">
-                  <div className="flex items-center gap-2">
-                    <span className="capitalize">{link.platform}</span>
-                    <Badge variant="outline" className="text-xs">
-                      {link.platform.replace('_', ' ')}
-                    </Badge>
-                  </div>
-                </TableCell>
-                <TableCell>
-                  <div className="flex items-center gap-2 max-w-xs">
-                    <a
-                      href={link.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className={`truncate flex-1 hover:underline transition-colors ${
-                        isValidUrl(link.url) ? 'text-blue-600' : 'text-red-600'
-                      }`}
-                      title={link.url}
+        <Separator className="my-4 bg-orange-100" />
+
+        <div className="overflow-hidden rounded-2xl border border-orange-100 bg-white/95 shadow-sm">
+          <ScrollArea className="w-full">
+            <div className="min-w-[960px]">
+              <Table>
+                <TableHeader className="bg-orange-50/40">
+                  <TableRow className="text-[11px] uppercase tracking-wide text-slate-500">
+                    <TableHead className="w-[90px]">Icon</TableHead>
+                    <TableHead
+                      onClick={() => requestSort('platform')}
+                      className="cursor-pointer select-none px-4 py-3 hover:bg-orange-50"
                     >
-                      {link.url}
-                    </a>
-                    <div className="flex gap-1">
-                      <TooltipProvider>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => copyUrl(link.url)}
-                              className="h-6 w-6 p-0"
-                            >
-                              <Copy className="h-3 w-3" />
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent>
-                            <p>Copy URL</p>
-                          </TooltipContent>
-                        </Tooltip>
-                      </TooltipProvider>
-                      <TooltipProvider>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => window.open(link.url, '_blank')}
-                              className="h-6 w-6 p-0"
-                            >
-                              <ExternalLink className="h-3 w-3" />
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent>
-                            <p>Open in new tab</p>
-                          </TooltipContent>
-                        </Tooltip>
-                      </TooltipProvider>
-                    </div>
-                  </div>
-                </TableCell>
-                <TableCell>
-                  <div className="flex items-center gap-2">
-                    <Input
-                      type="number"
-                      min="0"
-                      value={itemOrderInputs[link.id] ?? link.linksOrder?.toString() ?? ''}
-                      onChange={(e) => handleItemOrderChange(link.id, e.target.value)}
-                      onBlur={() => handleItemOrderSave(link.id)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') handleItemOrderSave(link.id);
-                      }}
-                      className="w-20 text-center"
-                      disabled={loadingStates[`${link.id}-order`]}
-                      aria-label={`Set order for ${link.platform} link`}
-                    />
-                    {loadingStates[`${link.id}-order`] && (
-                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-500" />
-                    )}
-                  </div>
-                </TableCell>
-                <TableCell>
-                  <ColorPicker
-                    value={getCurrentColor(link.id, 'bgColor')}
-                    onChange={(color) => handleColorChange(link.id, 'bgColor', color)}
-                    onSave={() => handleColorSave(link.id, 'bgColor')}
-                    label={`Set background color for ${link.platform} link`}
-                    isLoading={loadingStates[`${link.id}-bgColor`]}
-                  />
-                </TableCell>
-                <TableCell>
-                  <ColorPicker
-                    value={getCurrentColor(link.id, 'textColor')}
-                    onChange={(color) => handleColorChange(link.id, 'textColor', color)}
-                    onSave={() => handleColorSave(link.id, 'textColor')}
-                    label={`Set text color for ${link.platform} link`}
-                    isLoading={loadingStates[`${link.id}-textColor`]}
-                  />
-                </TableCell>
-                <TableCell>
-                  <ColorPicker
-                    value={getCurrentColor(link.id, 'borderColor')}
-                    onChange={(color) => handleColorChange(link.id, 'borderColor', color)}
-                    onSave={() => handleColorSave(link.id, 'borderColor')}
-                    label={`Set border color for ${link.platform} link`}
-                    isLoading={loadingStates[`${link.id}-borderColor`]}
-                  />
-                </TableCell>
-                <TableCell>
-                  <div className="flex gap-2">
-                    <TooltipProvider>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => onEdit(link)}
-                            className="h-8 w-8 p-0"
-                            aria-label={`Edit ${link.platform} link`}
-                          >
-                            <Pencil className="h-4 w-4" />
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          <p>Edit link</p>
-                        </TooltipContent>
-                      </Tooltip>
-                    </TooltipProvider>
-                    <TooltipProvider>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => onDelete(link.id)}
-                            className="h-8 w-8 p-0 hover:bg-red-50 hover:border-red-200"
-                            aria-label={`Delete ${link.platform} link`}
-                          >
-                            <Trash2 className="h-4 w-4 text-red-500" />
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          <p>Delete link</p>
-                        </TooltipContent>
-                      </Tooltip>
-                    </TooltipProvider>
-                  </div>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </div>
-
-      {/* No results message */}
-      {filteredAndSortedLinks.length === 0 && searchTerm && (
-        <div className="text-center py-8">
-          <Search className="mx-auto h-12 w-12 text-gray-400" />
-          <h3 className="mt-2 text-lg font-medium text-gray-900">No links found</h3>
-          <p className="mt-1 text-gray-500">
-            No social links match your search for "{searchTerm}". Try a different search term.
-          </p>
-          <Button
-            variant="outline"
-            onClick={() => setSearchTerm('')}
-            className="mt-4"
-          >
-            Clear search
-          </Button>
+                      <div className="flex items-center gap-1">
+                        Platform {getSortIcon('platform')}
+                      </div>
+                    </TableHead>
+                    <TableHead
+                      onClick={() => requestSort('url')}
+                      className="cursor-pointer select-none px-4 py-3 hover:bg-orange-50"
+                    >
+                      <div className="flex items-center gap-1">
+                        URL {getSortIcon('url')}
+                      </div>
+                    </TableHead>
+                    <TableHead
+                      onClick={() => requestSort('linksOrder')}
+                      className="w-[120px] cursor-pointer select-none px-4 py-3 hover:bg-orange-50"
+                    >
+                      <div className="flex items-center gap-1">
+                        Order {getSortIcon('linksOrder')}
+                      </div>
+                    </TableHead>
+                    <TableHead
+                      onClick={() => requestSort('bgColor')}
+                      className="w-[180px] cursor-pointer select-none px-4 py-3 hover:bg-orange-50"
+                    >
+                      <div className="flex items-center gap-1">
+                        Background {getSortIcon('bgColor')}
+                      </div>
+                    </TableHead>
+                    <TableHead
+                      onClick={() => requestSort('textColor')}
+                      className="w-[180px] cursor-pointer select-none px-4 py-3 hover:bg-orange-50"
+                    >
+                      <div className="flex items-center gap-1">
+                        Text {getSortIcon('textColor')}
+                      </div>
+                    </TableHead>
+                    <TableHead
+                      onClick={() => requestSort('borderColor')}
+                      className="w-[180px] cursor-pointer select-none px-4 py-3 hover:bg-orange-50"
+                    >
+                      <div className="flex items-center gap-1">
+                        Border {getSortIcon('borderColor')}
+                      </div>
+                    </TableHead>
+                    <TableHead className="w-[160px] px-4 py-3 text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>{renderTableRows()}</TableBody>
+              </Table>
+            </div>
+          </ScrollArea>
         </div>
-      )}
+      </div>
     </div>
   );
 };
+
+export const SocialLinksTable = memo(SocialLinksTableComponent);
+SocialLinksTable.displayName = 'SocialLinksTable';

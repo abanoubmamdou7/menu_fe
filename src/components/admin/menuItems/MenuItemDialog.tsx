@@ -15,6 +15,11 @@ interface MenuItemFormData {
   itm_group_code: string;
   photo_url: string;
   show_in_website: boolean;
+  fasting: boolean;
+  vegetarian: boolean;
+  healthyChoice: boolean;
+  signatureDish: boolean;
+  spicy: boolean;
 }
 
 interface MenuItemDialogProps {

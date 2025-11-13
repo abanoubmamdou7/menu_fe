@@ -1,18 +1,10 @@
-import React, { useState, useEffect } from 'react';
-import { useForm } from 'react-hook-form';
-import { Card } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import {
-  Form,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormControl,
-  FormMessage,
-} from '@/components/ui/form';
-import { Badge } from '@/components/ui/badge';
-import { Skeleton } from '@/components/ui/skeleton';
-import { toast } from 'sonner';
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import axios from "axios";
+import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
+import { toast } from "sonner";
 import {
   Tag,
   Upload,
@@ -21,23 +13,24 @@ import {
   CheckCircle2,
   AlertCircle,
   FileImage,
-  Loader2,
-} from 'lucide-react';
-import { useTagsInfo, useSaveTagsInfo } from '@/services/tagsService.ts';
+} from "lucide-react";
+import { useTagsInfo, useSaveTagsInfo } from "@/services/tagsService.ts";
 
-interface TagsFormValues {
-  fasting: string | null;
-  vegetarian: string | null;
-  healthy_choice: string | null;
-  signature_dish: string | null;
-  spicy: string | null;
-}
+const TAG_KEYS = [
+  "fasting",
+  "vegetarian",
+  "healthy_choice",
+  "signature_dish",
+  "spicy",
+] as const;
+
+type TagKey = (typeof TAG_KEYS)[number];
+type TagsPayload = Record<TagKey, string | null>;
 
 interface TagUploadState {
   file: File | null;
   preview: string | null;
   url: string | null;
-  uploading: boolean;
   error: string | null;
   removed: boolean;
 }
@@ -59,62 +52,69 @@ const AdminTagsPage = () => {
   const { data: tagsInfo, isLoading, error } = useTagsInfo();
   const updateMutation = useSaveTagsInfo();
 
-  const [tags, setTags] = useState<Record<string, TagUploadState>>({
-    fasting: { file: null, preview: null, url: null, uploading: false, error: null, removed: false },
-    vegetarian: { file: null, preview: null, url: null, uploading: false, error: null, removed: false },
-    healthy_choice: { file: null, preview: null, url: null, uploading: false, error: null, removed: false },
-    signature_dish: { file: null, preview: null, url: null, uploading: false, error: null, removed: false },
-    spicy: { file: null, preview: null, url: null, uploading: false, error: null, removed: false }
-  });
+  const tagLabels = useMemo<Record<TagKey, string>>(
+    () => ({
+      fasting: "Fasting",
+      vegetarian: "Vegetarian",
+      healthy_choice: "Healthy Choice",
+      signature_dish: "Signature Dish",
+      spicy: "Spicy",
+    }),
+    []
+  );
 
-  const [hasChanges, setHasChanges] = useState(false);
-  const [isUploading, setIsUploading] = useState(false);
-
-  const tagLabels = {
-    fasting: 'Fasting',
-    vegetarian: 'Vegetarian',
-    healthy_choice: 'Healthy Choice',
-    signature_dish: 'Signature Dish',
-    spicy: 'Spicy'
-  };
-
-  const form = useForm<TagsFormValues>({
-    defaultValues: {
-      fasting: null,
-      vegetarian: null,
-      healthy_choice: null,
-      signature_dish: null,
-      spicy: null,
+  const [tags, setTags] = useState<Record<TagKey, TagUploadState>>({
+    fasting: {
+      file: null,
+      preview: null,
+      url: null,
+      error: null,
+      removed: false,
+    },
+    vegetarian: {
+      file: null,
+      preview: null,
+      url: null,
+      error: null,
+      removed: false,
+    },
+    healthy_choice: {
+      file: null,
+      preview: null,
+      url: null,
+      error: null,
+      removed: false,
+    },
+    signature_dish: {
+      file: null,
+      preview: null,
+      url: null,
+      error: null,
+      removed: false,
+    },
+    spicy: {
+      file: null,
+      preview: null,
+      url: null,
+      error: null,
+      removed: false,
     },
   });
+  const [isUploading, setIsUploading] = useState(false);
+  const [initialValues, setInitialValues] = useState<TagsPayload>({
+    fasting: null,
+    vegetarian: null,
+    healthy_choice: null,
+    signature_dish: null,
+    spicy: null,
+  });
 
-  // Load existing tag data when tagsInfo is available
   useEffect(() => {
-    if (tagsInfo) {
-      form.reset({
-        fasting: tagsInfo.fasting || null,
-        vegetarian: tagsInfo.vegetarian || null,
-        healthy_choice: tagsInfo.healthy_choice || null,
-        signature_dish: tagsInfo.signature_dish || null,
-        spicy: tagsInfo.spicy || null,
-      });
-
-      // Update tags state with existing URLs
-      setTags(prev => ({
-        fasting: { ...prev.fasting, url: tagsInfo.fasting || null },
-        vegetarian: { ...prev.vegetarian, url: tagsInfo.vegetarian || null },
-        healthy_choice: { ...prev.healthy_choice, url: tagsInfo.healthy_choice || null },
-        signature_dish: { ...prev.signature_dish, url: tagsInfo.signature_dish || null },
-        spicy: { ...prev.spicy, url: tagsInfo.spicy || null }
-      }));
+    if (!tagsInfo) {
+      return;
     }
-  }, [tagsInfo, form]);
 
-  // Monitor changes for save button state
-  useEffect(() => {
-    if (!tagsInfo) return;
-
-    const initialValues = {
+    const nextInitial: TagsPayload = {
       fasting: tagsInfo.fasting || null,
       vegetarian: tagsInfo.vegetarian || null,
       healthy_choice: tagsInfo.healthy_choice || null,
@@ -122,154 +122,131 @@ const AdminTagsPage = () => {
       spicy: tagsInfo.spicy || null,
     };
 
-    const hasTagChanges = Object.keys(tags).some(key => {
-      const tag = tags[key];
-      const initialUrl = initialValues[key];
-      return tag.removed || tag.file !== null || tag.url !== initialUrl;
+    setInitialValues(nextInitial);
+
+    setTags((previous) => {
+      const resetState = { ...previous };
+      TAG_KEYS.forEach((key) => {
+        const state = resetState[key];
+        if (state.preview?.startsWith("blob:")) {
+          URL.revokeObjectURL(state.preview);
+        }
+        resetState[key] = {
+          file: null,
+          preview: null,
+          url: nextInitial[key],
+          error: null,
+          removed: false,
+        };
+      });
+      return resetState;
     });
+  }, [tagsInfo]);
 
-    setHasChanges(hasTagChanges);
-  }, [tags, tagsInfo]);
+  const hasChanges = useMemo(
+    () =>
+      Object.keys(tags).some((key) => {
+        const tag = tags[key];
+        const initialUrl = initialValues[key];
+        return tag.removed || tag.file !== null || tag.url !== initialUrl;
+      }),
+    [initialValues, tags]
+  );
 
-  const validateFile = (file: File): string | null => {
-    if (!file.name.toLowerCase().endsWith('.ico')) {
-      return 'Only .ico files are allowed';
+  const validateFile = useCallback((file: File): string | null => {
+    if (!file.name.toLowerCase().endsWith(".ico")) {
+      return "Only .ico files are allowed";
     }
-    if (file.size > 1024 * 1024) { // 1MB limit
-      return 'File size must be less than 1MB';
+    if (file.size > 1024 * 1024) {
+      return "File size must be less than 1MB";
     }
     return null;
-  };
+  }, []);
 
-  const handleTagChange = async (tagKey: string, file: File | null) => {
-    setTags(prev => ({
-      ...prev,
-      [tagKey]: {
-        ...prev[tagKey],
-        removed: false,
-        file: file,
-        error: null
+  const handleTagChange = useCallback(
+    (tagKey: TagKey, file: File | null) => {
+      const validationError = file ? validateFile(file) : null;
+      if (validationError) {
+        toast.error(validationError);
       }
-    }));
 
-    if (!file) {
-      // Clean up previous preview URL
-      const currentTag = tags[tagKey];
-      if (currentTag.preview?.startsWith('blob:')) {
-        URL.revokeObjectURL(currentTag.preview);
-      }
-      setTags(prev => ({
-        ...prev,
-        [tagKey]: {
-          ...prev[tagKey],
-          preview: null
+      setTags((previous) => {
+        const current = previous[tagKey];
+        if (current.preview?.startsWith("blob:")) {
+          URL.revokeObjectURL(current.preview);
         }
-      }));
-      return;
-    }
 
-    const validationError = validateFile(file);
-    if (validationError) {
-      setTags(prev => ({
-        ...prev,
-        [tagKey]: { ...prev[tagKey], error: validationError }
-      }));
-      return;
-    }
-
-    const previewUrl = URL.createObjectURL(file);
-    setTags(prev => ({
-      ...prev,
-      [tagKey]: {
-        ...prev[tagKey],
-        preview: previewUrl
-      }
-    }));
-
-    try {
-      setTags(prev => ({
-        ...prev,
-        [tagKey]: { ...prev[tagKey], uploading: true }
-      }));
-
-      const formData = new FormData();
-      formData.append('image', file);
-
-      const res = await fetch(
-        `${import.meta.env.VITE_API_BASE_URL}/api/image/uploadImage`,
-        {
-          method: 'POST',
-          headers: {
-            'Authorization': localStorage.getItem('token') || '',
-          },
-          credentials: 'include',
-          body: formData,
+        if (!file) {
+          return {
+            ...previous,
+            [tagKey]: {
+              ...current,
+              file: null,
+              preview: null,
+              error: null,
+              removed: false,
+            },
+          };
         }
-      );
 
-      if (res.status === 401) {
-        toast.error('Unauthorized. Login required.');
-        setTags(prev => ({
-          ...prev,
-          [tagKey]: { ...prev[tagKey], url: null, uploading: false }
-        }));
-        return;
-      }
+        if (validationError) {
+          return {
+            ...previous,
+            [tagKey]: {
+              ...current,
+              file: null,
+              preview: null,
+              error: validationError,
+            },
+          };
+        }
 
-      const result = await res.json();
-
-      if (res.ok && result?.fileUrls?.length > 0) {
-        setTags(prev => ({
-          ...prev,
+        const previewUrl = URL.createObjectURL(file);
+        return {
+          ...previous,
           [tagKey]: {
-            ...prev[tagKey],
-            url: result.fileUrls[0],
-            uploading: false,
-            error: null
-          }
-        }));
-        toast.success(`${tagLabels[tagKey]} icon uploaded successfully`);
-      } else {
-        throw new Error(result?.message || 'Failed to upload icon');
+            ...current,
+            file,
+            preview: previewUrl,
+            error: null,
+            removed: false,
+          },
+        };
+      });
+    },
+    [validateFile]
+  );
+
+  const handleFileInputChange = useCallback(
+    (tagKey: TagKey, event: React.ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0] ?? null;
+      handleTagChange(tagKey, file);
+      event.target.value = "";
+    },
+    [handleTagChange]
+  );
+
+  const removeImage = useCallback((tagKey: TagKey) => {
+    setTags((previous) => {
+      const current = previous[tagKey];
+      if (current.preview?.startsWith("blob:")) {
+        URL.revokeObjectURL(current.preview);
       }
-    } catch (err) {
-      console.error('Upload error:', err);
-      toast.error(err?.message || 'Upload error');
-      setTags(prev => ({
-        ...prev,
-        [tagKey]: { ...prev[tagKey], url: null, uploading: false, error: err.message }
-      }));
-    }
-  };
+      return {
+        ...previous,
+        [tagKey]: {
+          ...current,
+          file: null,
+          preview: null,
+          url: null,
+          error: null,
+          removed: true,
+        },
+      };
+    });
+  }, []);
 
-  const handleFileInputChange = (tagKey: string, event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0] || null;
-    handleTagChange(tagKey, file);
-  };
-
-  const removeImage = (tagKey: string) => {
-    const currentTag = tags[tagKey];
-
-    // Clean up preview URL if it exists
-    if (currentTag.preview?.startsWith('blob:')) {
-      URL.revokeObjectURL(currentTag.preview);
-    }
-
-    setTags(prev => ({
-      ...prev,
-      [tagKey]: {
-        ...prev[tagKey],
-        file: null,
-        preview: null,
-        url: null,
-        error: null,
-        removed: true
-      }
-    }));
-  };
-
-  const getImageUrl = (tagData: TagUploadState): string | null => {
-    // Priority: preview (for new uploads) > url (existing image from database)
+  const getImageUrl = useCallback((tagData: TagUploadState): string | null => {
     if (tagData.preview) {
       return tagData.preview;
     }
@@ -277,81 +254,128 @@ const AdminTagsPage = () => {
       return normalizeRemoteImageUrl(tagData.url);
     }
     return null;
-  };
+  }, []);
 
-  const hasImage = (tagData: TagUploadState): boolean => {
-    return !!(tagData.preview || tagData.url);
-  };
+  const hasImage = useCallback(
+    (tagData: TagUploadState) => Boolean(getImageUrl(tagData)),
+    [getImageUrl]
+  );
 
-  const handleSubmit = async () => {
+  const stagedTags = useMemo(
+    () =>
+      TAG_KEYS.map((key) => ({
+        key,
+        label: tagLabels[key],
+        state: tags[key],
+      })),
+    [tagLabels, tags]
+  );
+
+  const handleSubmit = useCallback(async () => {
+    if (!hasChanges) {
+      toast("No changes to save");
+      return;
+    }
+
     try {
       setIsUploading(true);
-      updateMutation.mutate(
-        {
-          fasting: tags.fasting.removed ? null : tags.fasting.url,
-          vegetarian: tags.vegetarian.removed ? null : tags.vegetarian.url,
-          healthy_choice: tags.healthy_choice.removed ? null : tags.healthy_choice.url,
-          signature_dish: tags.signature_dish.removed ? null : tags.signature_dish.url,
-          spicy: tags.spicy.removed ? null : tags.spicy.url,
-        },
-        {
-          onSuccess: () => {
-            toast.success('Tags updated successfully');
-            setIsUploading(false);
-            setHasChanges(false);
 
-            // Reset removed flags and clean up blob URLs
-            setTags(prev => {
-              const updated = { ...prev };
-              Object.keys(updated).forEach(key => {
-                updated[key].removed = false;
-                updated[key].file = null;
-                if (updated[key].preview?.startsWith('blob:')) {
-                  URL.revokeObjectURL(updated[key].preview);
-                  updated[key].preview = null;
-                }
-              });
-              return updated;
-            });
-          },
-          onError: (error) => {
-            toast.error(`Update failed: ${error.message}`);
-            setIsUploading(false);
-          },
+      const payload: TagsPayload = {
+        fasting: null,
+        vegetarian: null,
+        healthy_choice: null,
+        signature_dish: null,
+        spicy: null,
+      };
+
+      const updatedTags = { ...tags } as Record<TagKey, TagUploadState>;
+
+      for (const key of TAG_KEYS) {
+        const state = tags[key];
+        let nextUrl = state.url;
+
+        if (state.file) {
+          const formData = new FormData();
+          formData.append("image", state.file);
+
+          const response = await axios.post(
+            `${import.meta.env.VITE_API_BASE_URL}/api/image/uploadImage`,
+            formData,
+            {
+              withCredentials: true,
+              headers: {
+                Authorization: localStorage.getItem("token") || "",
+              },
+            }
+          );
+
+          nextUrl = response.data?.fileUrls?.[0] ?? null;
+          if (!nextUrl) {
+            throw new Error(
+              `${tagLabels[key]} icon upload failed. Please try again.`
+            );
+          }
+        } else if (state.removed) {
+          nextUrl = null;
         }
-      );
+
+        payload[key] = nextUrl;
+
+        if (state.preview?.startsWith("blob:")) {
+          URL.revokeObjectURL(state.preview);
+        }
+
+        updatedTags[key] = {
+          file: null,
+          preview: null,
+          url: nextUrl,
+          error: null,
+          removed: false,
+        };
+      }
+
+      await updateMutation.mutateAsync(payload);
+      toast.success("Tags updated successfully");
+      setInitialValues(payload);
+      setTags(updatedTags);
     } catch (error) {
-      toast.error(`Error: ${error.message}`);
+      console.error("Tags update failed:", error);
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Update failed. Please try again."
+      );
+    } finally {
       setIsUploading(false);
     }
-  };
+  }, [hasChanges, tagLabels, tags, updateMutation]);
 
-  // Cleanup blob URLs on component unmount
   useEffect(() => {
     return () => {
-      Object.values(tags).forEach(tag => {
-        if (tag.preview?.startsWith('blob:')) {
-          URL.revokeObjectURL(tag.preview);
+      TAG_KEYS.forEach((key) => {
+        const preview = tags[key].preview;
+        if (preview?.startsWith("blob:")) {
+          URL.revokeObjectURL(preview);
         }
       });
     };
-  }, []);
+  }, [tags]);
 
   if (error) {
     return (
       <div className="min-h-[400px] flex items-center justify-center">
-        <Card className="p-8 max-w-md mx-auto border-red-200 bg-red-50/50">
-          <div className="text-center space-y-4">
-            <div className="w-12 h-12 mx-auto bg-red-100 rounded-full flex items-center justify-center">
-              <AlertCircle className="w-6 h-6 text-red-600" />
+        <Card className="max-w-md border border-red-200 bg-red-50/60 p-8">
+          <div className="space-y-4 text-center">
+            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-red-100">
+              <AlertCircle className="h-6 w-6 text-red-600" />
             </div>
             <div>
               <h3 className="text-lg font-semibold text-red-900">
                 Unable to Load Data
               </h3>
-              <p className="text-red-700 mt-2">
-                There was an error loading your tags information. Please
-                try refreshing the page or contact support.
+              <p className="mt-2 text-red-700">
+                There was an error loading your tags information. Please try
+                refreshing the page or contact support.
               </p>
             </div>
           </div>
@@ -361,167 +385,173 @@ const AdminTagsPage = () => {
   }
 
   return (
-    <div className="max-w-4xl mx-auto space-y-8 p-6">
-      <div className="space-y-2">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-gradient-to-br from-green-500 to-teal-600 rounded-lg flex items-center justify-center">
-            <Tag className="w-5 h-5 text-white" />
-          </div>
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900">
-              Tag Management
-            </h1>
-            <p className="text-gray-600">
-              Upload .ico files for each tag type. These icons will be displayed alongside menu items.
-            </p>
-          </div>
-        </div>
-        {hasChanges && (
-          <div className="flex items-center gap-2 mt-4">
-            <Badge
-              variant="secondary"
-              className="bg-amber-100 text-amber-800 border-amber-200"
-            >
-              <AlertCircle className="w-3 h-3 mr-1" /> Unsaved changes
-            </Badge>
-          </div>
-        )}
-      </div>
-
-      <Card className="border-0 shadow-lg bg-white">
-        <div className="p-8">
-          {isLoading ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {Array.from({ length: 5 }).map((_, index) => (
-                <div key={index} className="space-y-4">
-                  <Skeleton className="h-6 w-24" />
-                  <Skeleton className="h-32 w-full rounded-lg" />
-                  <Skeleton className="h-10 w-full" />
-                  <Skeleton className="h-20 w-full" />
-                </div>
-              ))}
+    <div className="min-h-screen bg-gradient-to-br from-orange-50 via-white to-orange-100 px-4 py-10">
+      <div className="mx-auto flex max-w-5xl flex-col gap-8">
+        <div className="space-y-2">
+          <div className="flex items-center gap-3">
+            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-orange-500 via-orange-400 to-amber-500 shadow-lg">
+              <Tag className="h-6 w-6 text-white" />
             </div>
-          ) : (
-            <div className="space-y-8">
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {Object.entries(tags).map(([tagKey, tagData]) => (
-                  <div key={tagKey} className="bg-gray-50 rounded-lg border border-gray-200 p-6 shadow-sm">
-                    <h3 className="text-lg font-semibold text-gray-900 mb-4">
-                      {tagLabels[tagKey]}
-                    </h3>
-
-                    <div className="space-y-4">
-                      {/* Image Preview */}
-                      <div className="flex items-center justify-center w-full h-32 border-2 border-dashed border-gray-300 rounded-lg bg-white">
-                        {hasImage(tagData) ? (
-                          <div className="relative">
-                            <img
-                              src={getImageUrl(tagData)!}
-                              alt={tagLabels[tagKey]}
-                              className="h-16 w-16 object-contain"
-                            />
-                            <button
-                              type="button"
-                              onClick={() => removeImage(tagKey)}
-                              className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 hover:bg-red-600 transition-colors"
-                            >
-                              <X className="h-3 w-3" />
-                            </button>
-                          </div>
-                        ) : (
-                          <div className="text-center">
-                            <FileImage className="h-8 w-8 text-gray-400 mx-auto mb-2" />
-                            <p className="text-sm text-gray-500">No icon uploaded</p>
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Upload Button */}
-                      <div className="relative">
-                        <input
-                          type="file"
-                          accept=".ico"
-                          onChange={(e) => handleFileInputChange(tagKey, e)}
-                          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                          disabled={tagData.uploading}
-                        />
-                        <button
-                          type="button"
-                          className={`w-full flex items-center justify-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 ${
-                            tagData.uploading ? 'opacity-50 cursor-not-allowed' : ''
-                          }`}
-                          disabled={tagData.uploading}
-                        >
-                          {tagData.uploading ? (
-                            <>
-                              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                              Uploading...
-                            </>
-                          ) : (
-                            <>
-                              <Upload className="h-4 w-4 mr-2" />
-                              {hasImage(tagData) ? 'Replace Icon' : 'Upload Icon'}
-                            </>
-                          )}
-                        </button>
-                      </div>
-
-                      {/* Error Display */}
-                      {tagData.error && (
-                        <div className="flex items-center text-red-600 text-sm">
-                          <AlertCircle className="h-4 w-4 mr-1" />
-                          {tagData.error}
-                        </div>
-                      )}
-
-                      {/* File Requirements */}
-                      <div className="text-xs text-gray-500">
-                        <p>Requirements:</p>
-                        <ul className="list-disc list-inside mt-1 space-y-1">
-                          <li>File format: .ico only</li>
-                          <li>Max size: 1MB</li>
-                          <li>Recommended: 32x32px</li>
-                        </ul>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              <div className="border-t pt-8 flex items-center justify-between">
-                <div className="flex items-center gap-2 text-sm text-gray-500">
-                  {updateMutation.isSuccess && !hasChanges && (
-                    <>
-                      <CheckCircle2 className="w-4 h-4 text-green-600" />
-                      <span className="text-green-600">
-                        All changes saved
-                      </span>
-                    </>
-                  )}
-                </div>
-
-                <Button
-                  onClick={handleSubmit}
-              
-                  className="min-w-32 bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 shadow-lg hover:shadow-xl transition-all duration-200"
-                >
-                  {isUploading || updateMutation.isPending ? (
-                    <>
-                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin mr-2" />
-                      Saving...
-                    </>
-                  ) : (
-                    <>
-                      <Save className="w-4 h-4 mr-2" />
-                      Save Changes
-                    </>
-                  )}
-                </Button>
-              </div>
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900">Tag Management</h1>
+              <p className="text-gray-600">
+                Upload branded icons used to highlight menu item attributes.
+              </p>
+            </div>
+          </div>
+          {hasChanges && (
+            <div className="flex items-center gap-2 pt-2">
+              <Badge
+                variant="secondary"
+                className="border-amber-200 bg-amber-100 text-amber-800"
+              >
+                <AlertCircle className="mr-1 h-3 w-3" />
+                Unsaved changes
+              </Badge>
             </div>
           )}
         </div>
-      </Card>
+
+        <Card className="border border-orange-100 bg-white/95 shadow-lg backdrop-blur-sm">
+          <div className="p-6 sm:p-8">
+            {isLoading ? (
+              <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
+                {Array.from({ length: TAG_KEYS.length }).map((_, index) => (
+                  <div
+                    key={index}
+                    className="space-y-4 rounded-2xl border border-orange-100 bg-orange-50/40 p-6"
+                  >
+                    <Skeleton className="h-6 w-32 rounded-full" />
+                    <Skeleton className="h-28 w-full rounded-xl" />
+                    <Skeleton className="h-10 w-full rounded-xl" />
+                    <Skeleton className="h-4 w-3/4 rounded-full" />
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="space-y-10">
+                <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
+                  {stagedTags.map(({ key, label, state }) => {
+                    const imageUrl = getImageUrl(state);
+                    return (
+                      <div
+                        key={key}
+                        className="group flex flex-col gap-4 rounded-2xl border border-orange-100 bg-white/90 p-6 shadow-sm transition hover:shadow-md"
+                      >
+                        <div className="flex items-center justify-between">
+                          <h3 className="text-lg font-semibold text-gray-900">
+                            {label}
+                          </h3>
+                          {state.removed && (
+                            <Badge
+                              variant="outline"
+                              className="border-red-200 bg-red-50 text-red-600"
+                            >
+                              Removed
+                            </Badge>
+                          )}
+                        </div>
+
+                        <div className="relative flex h-32 items-center justify-center rounded-xl border border-dashed border-orange-200 bg-orange-50/40">
+                          {imageUrl ? (
+                            <>
+                              <img
+                                src={imageUrl}
+                                alt={label}
+                                className="h-16 w-16 object-contain"
+                              />
+                              <Button
+                                type="button"
+                                size="icon"
+                                variant="destructive"
+                                className="absolute -top-3 -right-3 h-8 w-8 rounded-full shadow-sm"
+                                onClick={() => removeImage(key)}
+                                disabled={isUploading}
+                              >
+                                <X className="h-4 w-4" />
+                              </Button>
+                            </>
+                          ) : (
+                            <div className="flex flex-col items-center text-center text-sm text-gray-500">
+                              <FileImage className="mb-2 h-8 w-8 text-orange-300" />
+                              No icon uploaded
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="space-y-2">
+                          <div className="relative">
+                            <input
+                              type="file"
+                              accept=".ico"
+                              onChange={(event) =>
+                                handleFileInputChange(key, event)
+                              }
+                              className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+                              disabled={isUploading}
+                            />
+                            <Button
+                              type="button"
+                              variant="outline"
+                              className="w-full justify-center border-orange-200 text-orange-600 hover:border-orange-300 hover:bg-orange-50"
+                              disabled={isUploading}
+                            >
+                              <Upload className="mr-2 h-4 w-4" />
+                              {imageUrl ? "Replace Icon" : "Upload Icon"}
+                            </Button>
+                          </div>
+
+                          {state.error && (
+                            <div className="flex items-center gap-2 text-sm text-red-600">
+                              <AlertCircle className="h-4 w-4" />
+                              {state.error}
+                            </div>
+                          )}
+
+                          <p className="text-xs text-gray-500">
+                            Use a <strong>.ico</strong> file up to 1MB
+                            (recommended 32×32px).
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div className="flex items-center justify-between border-t border-orange-100 pt-6">
+                  <div className="flex items-center gap-2 text-sm text-gray-500">
+                    {updateMutation.isSuccess && !hasChanges && (
+                      <>
+                        <CheckCircle2 className="h-4 w-4 text-green-600" />
+                        <span className="text-green-600">All changes saved</span>
+                      </>
+                    )}
+                  </div>
+                  <Button
+                    onClick={handleSubmit}
+                    disabled={
+                      isUploading || updateMutation.isPending || !hasChanges
+                    }
+                    className="min-w-32 bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 shadow-lg hover:shadow-xl transition"
+                  >
+                    {isUploading || updateMutation.isPending ? (
+                      <>
+                        <div className="mr-2 h-4 w-4 rounded-full border-2 border-white/30 border-t-white animate-spin" />
+                        Saving...
+                      </>
+                    ) : (
+                      <>
+                        <Save className="mr-2 h-4 w-4" />
+                        Save Changes
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
+        </Card>
+      </div>
     </div>
   );
 };
