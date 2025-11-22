@@ -41,6 +41,8 @@ import RestaurantLogoUpload from "@/components/admin/restaurant/RestaurantLogoUp
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { QRCodeCanvas } from "qrcode.react";
+import { DatabaseChangeDialog } from "@/components/admin/DatabaseChangeDialog";
+import { SyncConfirmationDialog } from "@/components/admin/SyncConfirmationDialog";
 
 interface RestaurantInfoFormValues {
   name: string;
@@ -60,6 +62,9 @@ const AdminRestaurantInfo = () => {
   const [logoRemoved, setLogoRemoved] = useState(false);
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [showDbChangeDialog, setShowDbChangeDialog] = useState(false);
+  const [showSyncConfirmationDialog, setShowSyncConfirmationDialog] = useState(false);
+  const [pendingSyncAction, setPendingSyncAction] = useState<(() => Promise<void>) | null>(null);
 
   const form = useForm<RestaurantInfoFormValues>({
     defaultValues: {
@@ -142,12 +147,96 @@ const AdminRestaurantInfo = () => {
     setLogoFile(null);
   }, []);
 
-  const handleSyncAll = useCallback(async () => {
+  // Check if database credentials have changed
+  const checkDatabaseChanged = useCallback(async (): Promise<{
+    changed: boolean;
+    currentDb?: string;
+    newDb?: string;
+  }> => {
+    try {
+      const storedCredentials = localStorage.getItem("dbCredentials");
+      if (!storedCredentials) {
+        // No stored credentials, first time sync
+        return { changed: false };
+      }
+
+      const credentials = JSON.parse(storedCredentials);
+      const currentEmail = credentials.email;
+      const currentPassword = credentials.password;
+
+      // Get current user from localStorage
+      const userStr = localStorage.getItem("user");
+      const user = userStr ? JSON.parse(userStr) : null;
+      
+      if (!user || !currentEmail || !currentPassword) {
+        return { changed: false };
+      }
+
+      // Check if email/password changed by attempting to get current database info
+      // We'll check via the token and compare with stored database name
+      const token = localStorage.getItem("token");
+      if (!token) {
+        return { changed: false };
+      }
+
+      // Try to get current database info from backend (lightweight endpoint)
+      const response = await fetch(
+        `${import.meta.env.VITE_API_BASE_URL}/api/auth/current-database`,
+        {
+          method: "GET",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: token,
+          },
+          credentials: "include",
+        }
+      );
+
+      if (!response.ok) {
+        // If endpoint fails, assume no change (fail gracefully)
+        console.warn("Could not check database change, assuming no change");
+        return { changed: false };
+      }
+
+      const result = await response.json().catch(() => ({}));
+      const newDatabaseName = result?.databaseName;
+      const storedDatabaseName = credentials.databaseName;
+
+      if (newDatabaseName && storedDatabaseName && newDatabaseName !== storedDatabaseName) {
+        return {
+          changed: true,
+          currentDb: storedDatabaseName,
+          newDb: newDatabaseName,
+        };
+      }
+
+      // Also check if email changed
+      if (user.email && user.email !== currentEmail) {
+        return {
+          changed: true,
+          currentDb: storedDatabaseName,
+          newDb: newDatabaseName || "New Database",
+        };
+      }
+
+      return { changed: false };
+    } catch (error) {
+      console.error("Error checking database change:", error);
+      return { changed: false };
+    }
+  }, []);
+
+  // Perform sync (normal or truncate)
+  const performSync = useCallback(async (truncate: boolean = false) => {
     try {
       setIsSyncing(true);
 
+      const endpoint = truncate
+        ? "/api/transfer/truncate-and-sync-all"
+        : "/api/transfer/sync-all";
+
       const response = await fetch(
-        `${import.meta.env.VITE_API_BASE_URL}/api/transfer/sync-all`,
+        `${import.meta.env.VITE_API_BASE_URL}${endpoint}`,
         {
           method: "POST",
           headers: {
@@ -172,11 +261,57 @@ const AdminRestaurantInfo = () => {
       const message =
         result?.message ||
         (failures.length > 0
-          ? "Sync completed with some branch errors."
+          ? truncate
+            ? "Truncate and sync completed with some branch errors."
+            : "Sync completed with some branch errors."
+          : truncate
+          ? "All data truncated and synced successfully from new database."
           : "All branches synced successfully.");
 
       if (failures.length === 0) {
         toast.success(message);
+        // Update stored credentials after successful sync
+        if (truncate) {
+          const userStr = localStorage.getItem("user");
+          const user = userStr ? JSON.parse(userStr) : null;
+          const token = localStorage.getItem("token");
+          if (user && token) {
+            try {
+              const dbResponse = await fetch(
+                `${import.meta.env.VITE_API_BASE_URL}/api/auth/current-database`,
+                {
+                  method: "GET",
+                  headers: {
+                    "Content-Type": "application/json",
+                    Authorization: token,
+                  },
+                  credentials: "include",
+                }
+              );
+              if (dbResponse.ok) {
+                const dbResult = await dbResponse.json().catch(() => ({}));
+                const dbName = dbResult?.databaseName;
+                
+                if (dbName) {
+                  const storedCredentials = localStorage.getItem("dbCredentials");
+                  if (storedCredentials) {
+                    const credentials = JSON.parse(storedCredentials);
+                    localStorage.setItem(
+                      "dbCredentials",
+                      JSON.stringify({
+                        ...credentials,
+                        databaseName: dbName,
+                        timestamp: Date.now(),
+                      })
+                    );
+                  }
+                }
+              }
+            } catch (e) {
+              console.error("Error updating credentials:", e);
+            }
+          }
+        }
       } else if (failures.length === result?.summary?.totalBranches) {
         toast.error(message);
       } else {
@@ -201,7 +336,36 @@ const AdminRestaurantInfo = () => {
     } finally {
       setIsSyncing(false);
     }
-}, []);
+  }, []);
+
+  const handleSyncAll = useCallback(async () => {
+    // Always show confirmation dialog first
+    setShowSyncConfirmationDialog(true);
+  }, []);
+
+  const handleConfirmSync = useCallback(async () => {
+    setShowSyncConfirmationDialog(false);
+    
+    // Always truncate and sync (remove all data from Supabase as requested)
+    await performSync(true);
+  }, [performSync]);
+
+  const handleCancelSync = useCallback(() => {
+    setShowSyncConfirmationDialog(false);
+  }, []);
+
+  const handleConfirmDbChange = useCallback(async () => {
+    setShowDbChangeDialog(false);
+    if (pendingSyncAction) {
+      await pendingSyncAction();
+      setPendingSyncAction(null);
+    }
+  }, [pendingSyncAction]);
+
+  const handleCancelDbChange = useCallback(() => {
+    setShowDbChangeDialog(false);
+    setPendingSyncAction(null);
+  }, []);
 
   const hasChanges = useMemo(
     () => form.formState.isDirty || logoRemoved || logoFile !== null,
@@ -532,6 +696,24 @@ const AdminRestaurantInfo = () => {
         </div>
       </Card>
     </div>
+    
+    {/* Sync Confirmation Dialog */}
+    <SyncConfirmationDialog
+      open={showSyncConfirmationDialog}
+      onOpenChange={setShowSyncConfirmationDialog}
+      onConfirm={handleConfirmSync}
+      onCancel={handleCancelSync}
+    />
+
+    {/* Database Change Confirmation Dialog */}
+    <DatabaseChangeDialog
+      open={showDbChangeDialog}
+      onOpenChange={setShowDbChangeDialog}
+      onConfirm={handleConfirmDbChange}
+      onCancel={handleCancelDbChange}
+      currentDatabase={undefined}
+      newDatabase={undefined}
+    />
   </div>
 );
 };

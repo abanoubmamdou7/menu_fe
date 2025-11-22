@@ -6,6 +6,13 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Table,
   TableBody,
   TableCell,
@@ -27,6 +34,8 @@ import { toast } from "sonner";
 
 interface MenuItemWithBranch extends MenuItem {
   branchCode?: string | null;
+  groupName?: string | null;
+  groupOrder?: number | null;
 }
 
 const buildItemKey = (id: string, branchCode?: string | null) =>
@@ -66,6 +75,7 @@ const normalizeSupabaseItem = (raw: Record<string, unknown>): MenuItemWithBranch
   const price = formatPriceValue(
     raw?.sales_price ?? raw?.salesPrice ?? raw?.price
   );
+  const group = (raw?.item_main_group as Record<string, unknown> | null) ?? null;
 
   return {
     id: (raw?.itm_code ?? raw?.id ?? "") as string,
@@ -91,6 +101,10 @@ const normalizeSupabaseItem = (raw: Record<string, unknown>): MenuItemWithBranch
     spicy: raw?.spicy === true,
     tagIcons: (raw?.tagIcons as MenuItem["tagIcons"]) ?? undefined,
     branchCode: (raw?.branch_code ?? raw?.branchCode ?? null) as string | null | undefined,
+    groupName: (group?.itm_group_name ??
+      group?.website_name_en ??
+      null) as string | null,
+    groupOrder: (group?.order_group as number) ?? null,
   };
 };
 
@@ -131,6 +145,8 @@ const MenuItemsTable: React.FC<MenuItemsTableProps> = ({
   >({});
   const [isLocalRefreshing, setIsLocalRefreshing] = useState(false);
   const refreshing = isLocalRefreshing || externalRefreshing;
+  const [selectedBranch, setSelectedBranch] = useState<string>("all");
+  const [selectedCategory, setSelectedCategory] = useState<string>("all");
 
   const handleItemOrderChange = useCallback(
     (itemKey: string, value: string) => {
@@ -183,9 +199,25 @@ const MenuItemsTable: React.FC<MenuItemsTableProps> = ({
           vegetarian,
           healthy_choice,
           signature_dish,
-          spicy
+          spicy,
+          item_main_group!inner(
+            itm_group_code,
+            itm_group_name,
+            website_name_ar,
+            website_name_en,
+            order_group,
+            saleable,
+            show_in_website,
+            branch_code
+          )
         `)
-        .order("item_order", { ascending: true });
+        .eq("saleable", true)
+        .eq("show_in_website", true)
+        .eq("item_main_group.saleable", true)
+        .eq("item_main_group.show_in_website", true)
+        .order("order_group", { ascending: true, foreignTable: "item_main_group" })
+        .order("item_order", { ascending: true })
+        .order("itm_name", { ascending: true });
 
       if (error) {
         throw error;
@@ -230,20 +262,63 @@ const MenuItemsTable: React.FC<MenuItemsTableProps> = ({
     }
     return normalizedItemsFromProps;
   }, [allItems, normalizedItemsFromProps]);
+  const visibleItems = useMemo<MenuItemWithBranch[]>(
+    () =>
+      baseItems.filter(
+        (item) => item.saleable === true && item.show_in_website === true
+      ),
+    [baseItems]
+  );
+  const branchOptions = useMemo<string[]>(() => {
+    const set = new Set<string>();
+    visibleItems.forEach((item) => {
+      if (item.branchCode) set.add(item.branchCode);
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [visibleItems]);
+  const categoryOptions = useMemo<string[]>(() => {
+    const set = new Set<string>();
+    visibleItems.forEach((item) => {
+      const label = item.groupName || item.category || "";
+      if (label) set.add(label);
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [visibleItems]);
 
   const filteredItems = useMemo(() => {
     const term = searchTerm.trim().toLowerCase();
-    if (!term) return baseItems;
-    return baseItems.filter((item) => {
-      const nameMatch = item.name?.toLowerCase().includes(term);
-      const descMatch = item.description?.toLowerCase().includes(term);
-      const idMatch = item.id?.toLowerCase().includes(term);
-      const categoryMatch = item.category?.toLowerCase().includes(term);
-      return nameMatch || descMatch || idMatch || categoryMatch;
-    });
-  }, [baseItems, searchTerm]);
+    const bySearch = (itemsToFilter: MenuItemWithBranch[]) => {
+      if (!term) return itemsToFilter;
+      return itemsToFilter.filter((item) => {
+        const nameMatch = item.name?.toLowerCase().includes(term);
+        const descMatch = item.description?.toLowerCase().includes(term);
+        const idMatch = item.id?.toLowerCase().includes(term);
+        const categoryMatch =
+          (item.groupName || item.category || "")
+            .toLowerCase()
+            .includes(term);
+        return nameMatch || descMatch || idMatch || categoryMatch;
+      });
+    };
+    const byBranch = (itemsToFilter: MenuItemWithBranch[]) => {
+      if (selectedBranch === "all") return itemsToFilter;
+      return itemsToFilter.filter(
+        (item) => (item.branchCode ?? "") === selectedBranch
+      );
+    };
+    const byCategory = (itemsToFilter: MenuItemWithBranch[]) => {
+      if (selectedCategory === "all") return itemsToFilter;
+      return itemsToFilter.filter(
+        (item) =>
+          (item.groupName || item.category || "") === selectedCategory
+      );
+    };
+    const afterBranch = byBranch(visibleItems);
+    const afterCategory = byCategory(afterBranch);
+    return bySearch(afterCategory);
+  }, [visibleItems, searchTerm, selectedBranch, selectedCategory]);
 
-  const totalCount = baseItems.length;
+  const totalCount = visibleItems.length;
   const filteredCount = filteredItems.length;
 
   useEffect(() => {
@@ -422,9 +497,6 @@ const MenuItemsTable: React.FC<MenuItemsTableProps> = ({
                 Menu Items
               </h2>
             </div>
-            <p className="mt-1 text-sm text-gray-600">
-              Review branch items, adjust ordering, and manage menu entries.
-            </p>
           </div>
 
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
@@ -436,6 +508,40 @@ const MenuItemsTable: React.FC<MenuItemsTableProps> = ({
                 onChange={(event) => onSearchChange(event.target.value)}
                 className="pl-9"
               />
+            </div>
+            <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+              <Select
+                value={selectedBranch}
+                onValueChange={(value) => setSelectedBranch(value)}
+              >
+                <SelectTrigger className="sm:w-48">
+                  <SelectValue placeholder="Branch" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Branches</SelectItem>
+                  {branchOptions.map((b) => (
+                    <SelectItem key={b} value={b}>
+                      {b}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select
+                value={selectedCategory}
+                onValueChange={(value) => setSelectedCategory(value)}
+              >
+                <SelectTrigger className="sm:w-56">
+                  <SelectValue placeholder="Category" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Categories</SelectItem>
+                  {categoryOptions.map((c) => (
+                    <SelectItem key={c} value={c}>
+                      {c}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="flex gap-2">
               <Button
@@ -485,98 +591,170 @@ const MenuItemsTable: React.FC<MenuItemsTableProps> = ({
               {fetchError}
             </div>
           )}
-          <Table>
-            <TableHeader className="bg-orange-50/40">
-              <TableRow className="uppercase text-xs tracking-wide text-gray-500">
-                <TableHead className="w-[160px]">Item Code</TableHead>
-                <TableHead
-                  className="cursor-pointer"
-                  onClick={() => requestSort("name")}
-                >
-                  <div className="flex items-center gap-1">
-                    Name {getSortIcon("name")}
-                  </div>
-                </TableHead>
-                <TableHead className="w-[160px]">Category</TableHead>
-                <TableHead
-                  className="w-[140px] cursor-pointer"
-                  onClick={() => requestSort("price")}
-                >
-                  <div className="flex items-center gap-1">
-                    Price {getSortIcon("price")}
-                  </div>
-                </TableHead>
-                <TableHead
-                  className="w-[140px] cursor-pointer"
-                  onClick={() => requestSort("itemOrder")}
-                >
-                  <div className="flex items-center gap-1">
-                    Order {getSortIcon("itemOrder")}
-                  </div>
-                </TableHead>
-                <TableHead className="w-[150px]">Branch</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {isFetchingAllItems || refreshing ? (
-                tableSkeleton
-              ) : paginatedItems.length === 0 ? (
-                <TableRow>
-                  <TableCell
-                    colSpan={7}
-                    className="py-10 text-center text-sm text-muted-foreground"
+          {/* Desktop/Table view */}
+          <div className="hidden md:block">
+            <Table>
+              <TableHeader className="bg-orange-50/40">
+                <TableRow className="uppercase text-xs tracking-wide text-gray-500">
+                  <TableHead className="w-[160px]">Item Code</TableHead>
+                  <TableHead
+                    className="cursor-pointer"
+                    onClick={() => requestSort("name")}
                   >
-                    No menu items found.
-                  </TableCell>
+                    <div className="flex items-center gap-1">
+                      Name {getSortIcon("name")}
+                    </div>
+                  </TableHead>
+                  <TableHead className="w-[160px]">Category</TableHead>
+                  <TableHead
+                    className="w-[140px] cursor-pointer"
+                    onClick={() => requestSort("price")}
+                  >
+                    <div className="flex items-center gap-1">
+                      Price {getSortIcon("price")}
+                    </div>
+                  </TableHead>
+                  <TableHead
+                    className="w-[140px] cursor-pointer"
+                    onClick={() => requestSort("itemOrder")}
+                  >
+                    <div className="flex items-center gap-1">
+                      Order {getSortIcon("itemOrder")}
+                    </div>
+                  </TableHead>
+                  <TableHead className="w-[150px]">Branch</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
-              ) : (
-                paginatedItems.map((item) => {
+              </TableHeader>
+              <TableBody>
+                {isFetchingAllItems || refreshing ? (
+                  tableSkeleton
+                ) : paginatedItems.length === 0 ? (
+                  <TableRow>
+                    <TableCell
+                      colSpan={7}
+                      className="py-10 text-center text-sm text-muted-foreground"
+                    >
+                      No menu items found.
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  paginatedItems.map((item) => {
+                    const itemKey = buildItemKey(item.id, item.branchCode);
+                    return (
+                      <TableRow key={itemKey} className="hover:bg-orange-50/30">
+                        <TableCell className="font-mono text-sm text-gray-600">
+                          {item.id}
+                        </TableCell>
+                        <TableCell>
+                          <div className="font-medium text-gray-900">
+                            {item.name || "Untitled item"}
+                          </div>
+                          {item.nameAr && (
+                            <div className="text-xs text-muted-foreground">
+                              {item.nameAr}
+                            </div>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-sm text-gray-600">
+                          {item.category || "—"}
+                        </TableCell>
+                        <TableCell className="font-medium text-gray-900">
+                          {item.price || "—"}
+                        </TableCell>
+                        <TableCell>
+                          <Input
+                            type="number"
+                            value={itemOrderInputs[itemKey] ?? item.itemOrder ?? ""}
+                            onChange={(event) =>
+                              handleItemOrderChange(itemKey, event.target.value)
+                            }
+                            onBlur={() => handleItemOrderSave(item, itemKey)}
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter") {
+                                event.preventDefault();
+                                handleItemOrderSave(item, itemKey);
+                              }
+                            }}
+                            className="w-24 text-center"
+                            disabled={savingItemOrders[itemKey]}
+                          />
+                        </TableCell>
+                        <TableCell className="text-sm text-gray-600">
+                          {item.branchCode || "—"}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex items-center justify-end gap-2">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => onEditItem(item)}
+                            >
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => onDeleteItem(item.id)}
+                              className="text-red-500 hover:text-red-600 hover:bg-red-50"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })
+                )}
+              </TableBody>
+            </Table>
+          </div>
+          {/* Mobile cards */}
+          <div className="md:hidden">
+            {isFetchingAllItems || refreshing ? (
+              <div className="divide-y divide-orange-100">
+                {Array.from({ length: Math.min(ITEMS_PER_PAGE, 6) }).map((_, i) => (
+                  <div key={`mi-skel-${i}`} className="p-4">
+                    <Skeleton className="h-4 w-24 rounded-full" />
+                    <Skeleton className="mt-2 h-5 w-40 rounded-full" />
+                    <div className="mt-2 flex items-center justify-between">
+                      <Skeleton className="h-4 w-16 rounded-full" />
+                      <Skeleton className="h-8 w-20 rounded-md" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : paginatedItems.length === 0 ? (
+              <div className="p-6 text-center text-sm text-muted-foreground">
+                No menu items found.
+              </div>
+            ) : (
+              <div className="divide-y divide-orange-100">
+                {paginatedItems.map((item) => {
                   const itemKey = buildItemKey(item.id, item.branchCode);
                   return (
-                    <TableRow key={itemKey} className="hover:bg-orange-50/30">
-                      <TableCell className="font-mono text-sm text-gray-600">
-                        {item.id}
-                      </TableCell>
-                      <TableCell>
-                        <div className="font-medium text-gray-900">
-                          {item.name || "Untitled item"}
-                        </div>
-                        {item.nameAr && (
-                          <div className="text-xs text-muted-foreground">
-                            {item.nameAr}
+                    <div key={itemKey} className="p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <div className="font-mono text-xs text-gray-600">
+                            {item.id}
                           </div>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-sm text-gray-600">
-                        {item.category || "—"}
-                      </TableCell>
-                      <TableCell className="font-medium text-gray-900">
-                        {item.price || "—"}
-                      </TableCell>
-                      <TableCell>
-                        <Input
-                          type="number"
-                          value={itemOrderInputs[itemKey] ?? item.itemOrder ?? ""}
-                          onChange={(event) =>
-                            handleItemOrderChange(itemKey, event.target.value)
-                          }
-                          onBlur={() => handleItemOrderSave(item, itemKey)}
-                          onKeyDown={(event) => {
-                            if (event.key === "Enter") {
-                              event.preventDefault();
-                              handleItemOrderSave(item, itemKey);
-                            }
-                          }}
-                          className="w-24 text-center"
-                          disabled={savingItemOrders[itemKey]}
-                        />
-                      </TableCell>
-                      <TableCell className="text-sm text-gray-600">
-                        {item.branchCode || "—"}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex items-center justify-end gap-2">
+                          <div className="mt-1 text-base font-semibold text-gray-900">
+                            {item.name || "Untitled item"}
+                          </div>
+                          {item.nameAr && (
+                            <div className="text-xs text-muted-foreground">
+                              {item.nameAr}
+                            </div>
+                          )}
+                          <div className="mt-1 text-sm text-gray-600">
+                            {item.category || "—"} • {item.branchCode || "—"}
+                          </div>
+                          <div className="mt-1 font-medium text-gray-900">
+                            {item.price || "—"}
+                          </div>
+                        </div>
+                        <div className="flex shrink-0 items-center gap-1">
                           <Button
                             variant="ghost"
                             size="icon"
@@ -593,13 +771,34 @@ const MenuItemsTable: React.FC<MenuItemsTableProps> = ({
                             <Trash2 className="h-4 w-4" />
                           </Button>
                         </div>
-                      </TableCell>
-                    </TableRow>
+                      </div>
+                      <div className="mt-3">
+                        <label className="mb-1 block text-xs text-muted-foreground">
+                          Order
+                        </label>
+                        <Input
+                          type="number"
+                          value={itemOrderInputs[itemKey] ?? item.itemOrder ?? ""}
+                          onChange={(event) =>
+                            handleItemOrderChange(itemKey, event.target.value)
+                          }
+                          onBlur={() => handleItemOrderSave(item, itemKey)}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter") {
+                              event.preventDefault();
+                              handleItemOrderSave(item, itemKey);
+                            }
+                          }}
+                          className="w-28"
+                          disabled={savingItemOrders[itemKey]}
+                        />
+                      </div>
+                    </div>
                   );
-                })
-              )}
-            </TableBody>
-          </Table>
+                })}
+              </div>
+            )}
+          </div>
         </div>
 
         {totalPages > 1 && (

@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { MapPin, Menu as MenuIcon, User, Store } from 'lucide-react';
 import LinkButton from '@/components/LinkButton';
@@ -38,31 +38,8 @@ const MainNavigationLinks: React.FC = () => {
   } = useMenuBranches();
 
   const branches = useMemo<PublicBranch[]>(() => branchOptions ?? [], [branchOptions]);
-  useEffect(() => {
-    if (!isBranchDialogOpen) {
-      setManualBranchCode('');
-      setManualBranchName('');
-      return;
-    }
-
-    if (branches.length === 1) {
-      setSelectedBranchCode(branches[0].code);
-      return;
-    }
-
-    if (!selectedBranchCode && typeof window !== 'undefined') {
-      try {
-        const storedCode = window.localStorage.getItem('selectedBranchCode');
-        if (storedCode && branches.some((branch) => branch.code === storedCode)) {
-          setSelectedBranchCode(storedCode);
-        }
-      } catch (error) {
-        console.warn('Unable to preselect stored branch', error);
-      }
-    }
-  }, [isBranchDialogOpen, branches, selectedBranchCode]);
-
-  const handleBranchNavigation = (branch: { code: string; name: string }) => {
+  
+  const handleBranchNavigation = useCallback((branch: { code: string; name: string }) => {
     const branchCode = branch.code.trim();
     if (!branchCode) {
       return;
@@ -87,7 +64,32 @@ const MainNavigationLinks: React.FC = () => {
 
     setIsBranchDialogOpen(false);
     navigate(`/menu?${params.toString()}`);
-  };
+  }, [navigate]);
+
+  useEffect(() => {
+    if (!isBranchDialogOpen) {
+      setManualBranchCode('');
+      setManualBranchName('');
+      return;
+    }
+
+    // If dialog opens and there's only one branch, close it and navigate
+    if (branches.length === 1) {
+      handleBranchNavigation(branches[0]);
+      return;
+    }
+
+    if (!selectedBranchCode && typeof window !== 'undefined') {
+      try {
+        const storedCode = window.localStorage.getItem('selectedBranchCode');
+        if (storedCode && branches.some((branch) => branch.code === storedCode)) {
+          setSelectedBranchCode(storedCode);
+        }
+      } catch (error) {
+        console.warn('Unable to preselect stored branch', error);
+      }
+    }
+  }, [isBranchDialogOpen, branches, selectedBranchCode, handleBranchNavigation]);
 
   const handleManualBranchSubmit = (event?: React.FormEvent) => {
     if (event) {
@@ -107,6 +109,14 @@ const MainNavigationLinks: React.FC = () => {
 
   const handleViewMenuClick: React.MouseEventHandler<HTMLElement> = (event) => {
     event.preventDefault();
+    
+    // If there's only one branch, automatically select it and navigate
+    if (branches.length === 1) {
+      handleBranchNavigation(branches[0]);
+      return;
+    }
+    
+    // Otherwise, open the dialog for selection
     setIsBranchDialogOpen(true);
   };
 
@@ -210,7 +220,7 @@ const MainNavigationLinks: React.FC = () => {
                   {translate('selectBranch', 'Select a branch')}
                 </p>
                 <div className="grid gap-3 sm:grid-cols-2">
-                  {branches.map((branch) => {
+                {branches.map((branch) => {
                     const isSelected = selectedBranchCode === branch.code;
                     return (
                       <Button

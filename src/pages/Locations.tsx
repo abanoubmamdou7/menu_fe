@@ -127,24 +127,32 @@ const Locations = () => {
                         <Clock className="h-4 w-4" />
                         <span>{t("workingHours")}</span>
                       </div>
-                      <div className="rounded-xl border border-gray-100 bg-gray-50/80 p-4">
-                        <dl className="grid grid-cols-1 gap-2 text-sm text-gray-600 sm:grid-cols-2">
-                          {location.working_hours.map((day) => (
-                            <div
-                              key={day.day}
-                              className="flex items-center justify-between gap-2"
-                            >
-                              <dt className="font-medium text-gray-700">
-                                {day.day}
-                              </dt>
-                              <dd className="text-right">
-                                {day.closed
-                                  ? t("closed")
-                                  : formatWorkingHours(day)}
-                              </dd>
-                            </div>
-                          ))}
-                        </dl>
+                      <div className="space-y-2">
+                        {location.working_hours.map((day) => (
+                          <div
+                            key={day.day}
+                            className={`group flex items-center justify-between rounded-lg border px-4 py-3 transition-all duration-150 ${
+                              day.closed
+                                ? 'border-gray-200 bg-gray-50/50 hover:bg-gray-50'
+                                : 'border-emerald-200/60 bg-white hover:border-emerald-300 hover:bg-emerald-50/30'
+                            }`}
+                          >
+                            <dt className={`text-sm font-medium ${
+                              day.closed ? 'text-gray-600' : 'text-gray-900'
+                            }`}>
+                              {day.day}
+                            </dt>
+                            <dd className={`text-sm font-semibold tabular-nums ${
+                              day.closed 
+                                ? 'text-gray-400' 
+                                : 'text-emerald-700'
+                            }`}>
+                              {day.closed
+                                ? t("closed")
+                                : formatWorkingHours(day)}
+                            </dd>
+                          </div>
+                        ))}
                       </div>
                     </div>
                   ) : null}

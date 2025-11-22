@@ -1,39 +1,4 @@
 
-// import React, { useState } from 'react';
-// import { LucideIcon } from 'lucide-react';
-
-// interface LinkButtonProps {
-//   href: string;
-//   icon: LucideIcon;
-//   label: string;
-//   className?: string;
-//   style?: React.CSSProperties;
-//   hoverStyle?: React.CSSProperties;
-// }
-
-// const LinkButton: React.FC<LinkButtonProps> = ({ href, icon: Icon, label, className, style, hoverStyle }) => {
-//   const [isHover, setIsHover] = useState(false);
-
-//   const combinedStyle = isHover && hoverStyle ? { ...style, ...hoverStyle } : style;
-
-//   return (
-//     <a
-//       href={href}
-//       target="_blank"
-//       rel="noopener noreferrer"
-//       className={`flex items-center justify-center space-x-2 rounded-md px-4 py-2 transition ${className}`}
-//       style={combinedStyle}
-//       onMouseEnter={() => setIsHover(true)}
-//       onMouseLeave={() => setIsHover(false)}
-//     >
-//       <Icon className="h-5 w-5" />
-//       <span>{label}</span>
-//     </a>
-//   );
-// };
-
-// export default LinkButton;
-
 import React, { useState } from 'react';
 import { LucideIcon } from 'lucide-react';
 

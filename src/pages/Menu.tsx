@@ -351,11 +351,19 @@ const Menu = () => {
   const [showSubLeftArrow, setShowSubLeftArrow] = useState(false);
   const [showSubRightArrow, setShowSubRightArrow] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  // Mobile-specific arrow visibility (separate from desktop to avoid ref clashes)
+  const [showLeftArrowMobile, setShowLeftArrowMobile] = useState(false);
+  const [showRightArrowMobile, setShowRightArrowMobile] = useState(false);
+  const [showSubLeftArrowMobile, setShowSubLeftArrowMobile] = useState(false);
+  const [showSubRightArrowMobile, setShowSubRightArrowMobile] = useState(false);
   const [currentView, setCurrentView] =
     useState<keyof typeof VIEW_STYLES>("card");
 
   const tabsContainerRef = useRef<HTMLDivElement | null>(null);
   const subTabsContainerRef = useRef<HTMLDivElement | null>(null);
+  // Mobile-specific refs (desktop sections also render and can steal shared refs)
+  const mobileTabsContainerRef = useRef<HTMLDivElement | null>(null);
+  const mobileSubTabsContainerRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     setActiveParentCategory(null);
@@ -364,6 +372,45 @@ const Menu = () => {
 
   const { data: restaurantInfo } = useRestaurantInfo();
   const showAllCategory = !!restaurantInfo?.show_all_category;
+
+  // Update favicon dynamically from restaurant info (logo/icon) when available
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    if (!restaurantInfo) return;
+    const info = restaurantInfo as unknown as {
+      favicon?: string;
+      logoUrl?: string;
+      logo_url?: string;
+      logo?: string;
+      icon?: string;
+    };
+    const logoUrl =
+      info?.favicon ||
+      info?.logoUrl ||
+      info?.logo_url ||
+      info?.logo ||
+      info?.icon;
+    if (!logoUrl || typeof logoUrl !== "string" || logoUrl.trim().length === 0)
+      return;
+    try {
+      let link =
+        (document.querySelector("link#app-favicon") as HTMLLinkElement | null) ||
+        (document.querySelector("link[rel='icon']") as HTMLLinkElement | null);
+      if (!link) {
+        link = document.createElement("link");
+        link.rel = "icon";
+        link.id = "app-favicon";
+        document.head.appendChild(link);
+      } else {
+        link.id = link.id || "app-favicon";
+      }
+      // Prefer PNG/ICO; type hint is optional and safe
+      link.type = "image/png";
+      link.href = logoUrl;
+    } catch (err) {
+      console.warn("Unable to set dynamic favicon", err);
+    }
+  }, [restaurantInfo]);
 
   const allowedViews = React.useMemo(
     () => Object.keys(VIEW_STYLES) as Array<keyof typeof VIEW_STYLES>,
@@ -604,6 +651,17 @@ const Menu = () => {
     }
   }, []);
 
+  const checkMobileScrollPosition = useCallback(() => {
+    if (!mobileTabsContainerRef.current) return;
+    try {
+      const { scrollLeft, scrollWidth, clientWidth } =
+        mobileTabsContainerRef.current;
+      setShowLeftArrowMobile(scrollLeft > 0);
+      setShowRightArrowMobile(scrollLeft < scrollWidth - clientWidth - 1);
+    } catch (error) {
+      console.error("Error checking mobile scroll position:", error);
+    }
+  }, []);
   const scrollCategories = useCallback(
     (direction: "left" | "right") => {
       if (!tabsContainerRef.current) return;
@@ -623,6 +681,26 @@ const Menu = () => {
     [scrollAmount]
   );
 
+  const scrollCategoriesMobile = useCallback(
+    (direction: "left" | "right") => {
+      if (!mobileTabsContainerRef.current) return;
+      try {
+        const newScrollLeft =
+          direction === "left"
+            ? mobileTabsContainerRef.current.scrollLeft - scrollAmount
+            : mobileTabsContainerRef.current.scrollLeft + scrollAmount;
+        mobileTabsContainerRef.current.scrollTo({
+          left: newScrollLeft,
+          behavior: "smooth",
+        });
+      } catch (error) {
+        console.error("Error scrolling categories (mobile):", error);
+      }
+    },
+    [scrollAmount]
+  );
+  // (moved continuous scroll helpers below to avoid TDZ on callbacks)
+
   const checkSubScrollPosition = useCallback(() => {
     if (!subTabsContainerRef.current) return;
     try {
@@ -635,6 +713,17 @@ const Menu = () => {
     }
   }, []);
 
+  const checkMobileSubScrollPosition = useCallback(() => {
+    if (!mobileSubTabsContainerRef.current) return;
+    try {
+      const { scrollLeft, scrollWidth, clientWidth } =
+        mobileSubTabsContainerRef.current;
+      setShowSubLeftArrowMobile(scrollLeft > 0);
+      setShowSubRightArrowMobile(scrollLeft < scrollWidth - clientWidth - 1);
+    } catch (error) {
+      console.error("Error checking sub scroll position (mobile):", error);
+    }
+  }, []);
   const scrollSubCategories = useCallback(
     (direction: "left" | "right") => {
       if (!subTabsContainerRef.current) return;
@@ -654,6 +743,72 @@ const Menu = () => {
     [scrollAmount]
   );
 
+  const scrollSubCategoriesMobile = useCallback(
+    (direction: "left" | "right") => {
+      if (!mobileSubTabsContainerRef.current) return;
+      try {
+        const newScrollLeft =
+          direction === "left"
+            ? mobileSubTabsContainerRef.current.scrollLeft - scrollAmount
+            : mobileSubTabsContainerRef.current.scrollLeft + scrollAmount;
+        mobileSubTabsContainerRef.current.scrollTo({
+          left: newScrollLeft,
+          behavior: "smooth",
+        });
+      } catch (error) {
+        console.error("Error scrolling subcategories (mobile):", error);
+      }
+    },
+    [scrollAmount]
+  );
+  // Continuous scroll helpers for parent categories (after checks to avoid TDZ)
+  const categoryScrollIntervalRef = useRef<number | null>(null);
+  const startCategoryContinuousScroll = useCallback((direction: "left" | "right") => {
+    const step = direction === "left" ? -20 : 20;
+    if (!tabsContainerRef.current) return;
+    if (categoryScrollIntervalRef.current) {
+      window.clearInterval(categoryScrollIntervalRef.current);
+      categoryScrollIntervalRef.current = null;
+    }
+    const tick = () => {
+      if (!tabsContainerRef.current) return;
+      tabsContainerRef.current.scrollBy({ left: step, behavior: "auto" });
+      checkScrollPosition();
+    };
+    tick();
+    categoryScrollIntervalRef.current = window.setInterval(tick, 16);
+  }, [checkScrollPosition]);
+  const stopCategoryContinuousScroll = useCallback(() => {
+    if (categoryScrollIntervalRef.current) {
+      window.clearInterval(categoryScrollIntervalRef.current);
+      categoryScrollIntervalRef.current = null;
+    }
+  }, []);
+
+  // Continuous scroll helpers for subcategories (after checks to avoid TDZ)
+  const subCategoryScrollIntervalRef = useRef<number | null>(null);
+  const startSubContinuousScroll = useCallback((direction: "left" | "right") => {
+    const step = direction === "left" ? -20 : 20;
+    if (!subTabsContainerRef.current) return;
+    if (subCategoryScrollIntervalRef.current) {
+      window.clearInterval(subCategoryScrollIntervalRef.current);
+      subCategoryScrollIntervalRef.current = null;
+    }
+    const tick = () => {
+      if (!subTabsContainerRef.current) return;
+      subTabsContainerRef.current.scrollBy({ left: step, behavior: "auto" });
+      checkSubScrollPosition();
+    };
+    tick();
+    subCategoryScrollIntervalRef.current = window.setInterval(tick, 16);
+  }, [checkSubScrollPosition]);
+  const stopSubContinuousScroll = useCallback(() => {
+    if (subCategoryScrollIntervalRef.current) {
+      window.clearInterval(subCategoryScrollIntervalRef.current);
+      subCategoryScrollIntervalRef.current = null;
+    }
+  }, []);
+
   useEffect(() => {
     if (sortedParentCategories.length > 0) {
       checkScrollPosition();
@@ -662,6 +817,15 @@ const Menu = () => {
     }
   }, [sortedParentCategories, checkScrollPosition]);
 
+  // Mobile parent categories scroll visibility
+  useEffect(() => {
+    if (sortedParentCategories.length > 0) {
+      checkMobileScrollPosition();
+      window.addEventListener("resize", checkMobileScrollPosition);
+      return () =>
+        window.removeEventListener("resize", checkMobileScrollPosition);
+    }
+  }, [sortedParentCategories, checkMobileScrollPosition]);
   useEffect(() => {
     if (sortedSubCategories.length > 0) {
       checkSubScrollPosition();
@@ -670,6 +834,15 @@ const Menu = () => {
     }
   }, [sortedSubCategories, checkSubScrollPosition]);
 
+  // Mobile subcategories scroll visibility
+  useEffect(() => {
+    if (sortedSubCategories.length > 0) {
+      checkMobileSubScrollPosition();
+      window.addEventListener("resize", checkMobileSubScrollPosition);
+      return () =>
+        window.removeEventListener("resize", checkMobileSubScrollPosition);
+    }
+  }, [sortedSubCategories, checkMobileSubScrollPosition]);
   if (!branchCode) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-orange-50 to-orange-100 p-4">
@@ -810,67 +983,74 @@ const Menu = () => {
         ) : (
           <>
             <div className="sticky top-[88px] z-30 -mx-4 bg-white/95 px-4 pb-4 pt-6 backdrop-blur lg:hidden">
-              <DropdownMenu open={dropdownOpen} onOpenChange={setDropdownOpen}>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    variant="outline"
-                    className="flex h-12 w-full items-center justify-between rounded-2xl border border-orange-200 bg-white px-5 font-semibold text-gray-900 shadow-sm transition hover:border-orange-300 hover:bg-orange-50"
-                  >
-                    <span className="truncate text-lg">
-                      {!activeParentCategory && !activeSubCategory
-                        ? t("All Items") || t("all") || "All Items"
-                        : activeCategoryName}
-                    </span>
-                    <ChevronDown
-                      className={cn(
-                        "ml-3 h-5 w-5 text-orange-500 transition-transform",
-                        dropdownOpen && "rotate-180"
-                      )}
-                    />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent
-                  className="w-[calc(100vw-32px)] max-h-80 overflow-y-auto rounded-2xl border border-orange-100 bg-white/95 p-1 shadow-2xl backdrop-blur"
-                  align="center"
-                  sideOffset={12}
+              <Button
+                variant="outline"
+                size="icon"
+                className="absolute left-0 top-1/2 z-40 -translate-y-1/2 rounded-full border-orange-200 bg-white/95 shadow-md transition hover:border-orange-300 hover:bg-white disabled:opacity-50 disabled:cursor-not-allowed"
+                onClick={() => scrollCategoriesMobile("left")}
+                onMouseDown={() => startCategoryContinuousScroll("left")}
+                onMouseUp={stopCategoryContinuousScroll}
+                onMouseLeave={stopCategoryContinuousScroll}
+                onTouchStart={() => startCategoryContinuousScroll("left")}
+                onTouchEnd={stopCategoryContinuousScroll}
+                disabled={!showLeftArrowMobile}
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="outline"
+                size="icon"
+                className="absolute right-0 top-1/2 z-40 -translate-y-1/2 rounded-full border-orange-200 bg-white/95 shadow-md transition hover:border-orange-300 hover:bg-white disabled:opacity-50 disabled:cursor-not-allowed"
+                onClick={() => scrollCategoriesMobile("right")}
+                onMouseDown={() => startCategoryContinuousScroll("right")}
+                onMouseUp={stopCategoryContinuousScroll}
+                onMouseLeave={stopCategoryContinuousScroll}
+                onTouchStart={() => startCategoryContinuousScroll("right")}
+                onTouchEnd={stopCategoryContinuousScroll}
+                disabled={!showRightArrowMobile}
+              >
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+              <Tabs
+                value={activeParentCategory || "all"}
+                className=""
+              >
+                <div
+                  ref={mobileTabsContainerRef}
+                  className="flex overflow-x-auto scrollbar-hide"
+                  style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
+                  onScroll={checkMobileScrollPosition}
                 >
-                  {showAllCategory && (
-                    <DropdownMenuItem
-                      onClick={() => {
-                        setActiveParentCategory(null);
-                        setActiveSubCategory(null);
-                        setDropdownOpen(false);
-                      }}
-                      className="flex cursor-pointer items-center justify-between rounded-xl px-4 py-3 hover:bg-orange-50"
-                    >
-                      <span className="text-base font-medium text-gray-900">
+                  <TabsList className="flex w-max gap-2 rounded-3xl border border-orange-100 bg-white/80 p-1">
+                    {showAllCategory && (
+                      <TabsTrigger
+                        value="all"
+                        onClick={() => {
+                          setActiveParentCategory(null);
+                          setActiveSubCategory(null);
+                        }}
+                        className="rounded-2xl px-4 py-2 text-sm font-semibold text-gray-600 transition hover:bg-orange-50 data-[state=active]:bg-gradient-to-r data-[state=active]:from-orange-500 data-[state=active]:to-orange-600 data-[state=active]:text-white"
+                      >
                         {t("all") || "All"}
-                      </span>
-                      {!activeParentCategory && !activeSubCategory && (
-                        <Check className="h-5 w-5 text-orange-500" />
-                      )}
-                    </DropdownMenuItem>
-                  )}
-                  {sortedParentCategories.map((category) => (
-                    <DropdownMenuItem
-                      key={category?.id ?? `parent-${category?.name}`}
-                      onClick={() =>
-                        handleParentCategorySelect(
-                          category?.id ? String(category.id) : null
-                        )
-                      }
-                      className="flex cursor-pointer items-center justify-between rounded-xl px-4 py-3 hover:bg-orange-50"
-                    >
-                      <span className="truncate text-base font-medium text-gray-900">
+                      </TabsTrigger>
+                    )}
+                    {sortedParentCategories.map((category) => (
+                      <TabsTrigger
+                        key={category?.id ?? `parent-${category?.name}`}
+                        value={category?.id ? String(category.id) : ""}
+                        onClick={() =>
+                          handleParentCategorySelect(
+                            category?.id ? String(category.id) : null
+                          )
+                        }
+                        className="rounded-2xl px-4 py-2 text-sm font-semibold text-gray-600 transition hover:bg-orange-50 data-[state=active]:bg-gradient-to-r data-[state=active]:from-orange-500 data-[state=active]:to-orange-600 data-[state=active]:text-white"
+                      >
                         {category?.name || "Unknown Category"}
-                      </span>
-                      {activeParentCategory === category?.id && (
-                        <Check className="h-5 w-5 text-orange-500" />
-                      )}
-                    </DropdownMenuItem>
-                  ))}
-                </DropdownMenuContent>
-              </DropdownMenu>
+                      </TabsTrigger>
+                    ))}
+                  </TabsList>
+                </div>
+              </Tabs>
             </div>
 
             <div className="relative hidden lg:block">
@@ -878,7 +1058,7 @@ const Menu = () => {
                 <Button
                   variant="outline"
                   size="icon"
-                  className="absolute left-0 top-1/2 z-10 -translate-y-1/2 rounded-full border-orange-200 bg-white/95 shadow-md transition hover:border-orange-300 hover:bg-white"
+                  className="absolute left-0 top-1/2 z-10 -translate-y-1/2 rounded-full border-orange-200 bg-white/95 shadow-md transition hover:border-orange-300 hover:bg-white lg:hidden"
                   onClick={() => scrollCategories("left")}
                 >
                   <ChevronLeft className="h-4 w-4" />
@@ -888,7 +1068,7 @@ const Menu = () => {
                 <Button
                   variant="outline"
                   size="icon"
-                  className="absolute right-0 top-1/2 z-10 -translate-y-1/2 rounded-full border-orange-200 bg-white/95 shadow-md transition hover:border-orange-300 hover:bg-white"
+                  className="absolute right-0 top-1/2 z-10 -translate-y-1/2 rounded-full border-orange-200 bg-white/95 shadow-md transition hover:border-orange-300 hover:bg-white lg:hidden"
                   onClick={() => scrollCategories("right")}
                 >
                   <ChevronRight className="h-4 w-4" />
@@ -900,7 +1080,7 @@ const Menu = () => {
               >
                 <div
                   ref={tabsContainerRef}
-                  className="flex overflow-x-auto scrollbar-hide"
+                  className="flex overflow-x-auto scrollbar-hide justify-center"
                   style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
                   onScroll={checkScrollPosition}
                 >
@@ -939,75 +1119,11 @@ const Menu = () => {
             {activeParentCategory && sortedSubCategories.length > 0 && (
               <>
                 <div className="sticky top-[148px] z-20 -mx-4 bg-white/95 px-4 pb-4 pt-2 backdrop-blur lg:hidden">
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button
-                        variant="outline"
-                        className="flex h-11 w-full items-center justify-between rounded-xl border border-blue-200 bg-white px-4 text-sm font-medium text-gray-800 shadow-sm transition hover:border-blue-300 hover:bg-blue-50"
-                      >
-                        <span className="truncate">
-                          {activeSubCategory
-                            ? sortedSubCategories.find(
-                                (cat) => cat.id === activeSubCategory
-                              )?.name || t("selectSubcategory") || "Select"
-                            : `${t("all") || "All"} ${
-                                sortedParentCategories.find(
-                                  (cat) => cat.id === activeParentCategory
-                                )?.name || ""
-                              }`}
-                        </span>
-                        <ChevronDown className="ml-3 h-4 w-4 text-blue-500" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent
-                      className="w-[calc(100vw-32px)] max-h-60 overflow-y-auto rounded-xl border border-blue-100 bg-white/95 p-1 shadow-xl backdrop-blur"
-                      align="center"
-                      sideOffset={8}
-                    >
-                      <DropdownMenuItem
-                        onClick={() => setActiveSubCategory(null)}
-                        className="flex cursor-pointer items-center justify-between rounded-lg px-4 py-3 hover:bg-blue-50"
-                      >
-                        <span className="text-sm font-medium text-gray-800">
-                          {t("all") || "All"}{" "}
-                          {
-                            sortedParentCategories.find(
-                              (cat) => cat.id === activeParentCategory
-                            )?.name
-                          }
-                        </span>
-                        {!activeSubCategory && (
-                          <Check className="h-4 w-4 text-blue-500" />
-                        )}
-                      </DropdownMenuItem>
-                      {sortedSubCategories.map((subCategory) => (
-                          <DropdownMenuItem
-                            key={subCategory?.id ?? `sub-${subCategory?.name}`}
-                            onClick={() =>
-                              handleSubCategorySelect(
-                                subCategory?.id ? String(subCategory.id) : null
-                              )
-                            }
-                          className="flex cursor-pointer items-center justify-between rounded-lg px-4 py-3 hover:bg-blue-50"
-                        >
-                          <span className="truncate text-sm font-medium text-gray-800">
-                            {subCategory?.name || "Unknown Subcategory"}
-                          </span>
-                          {activeSubCategory === subCategory?.id && (
-                            <Check className="h-4 w-4 text-blue-500" />
-                          )}
-                        </DropdownMenuItem>
-                      ))}
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </div>
-
-                <div className="relative hidden lg:block">
                   {showSubLeftArrow && (
                     <Button
                       variant="outline"
                       size="icon"
-                      className="absolute left-0 top-1/2 z-10 -translate-y-1/2 rounded-full border-blue-200 bg-white/95 shadow-md transition hover:border-blue-300 hover:bg-white"
+                      className="absolute left-0 top-1/2 z-30 -translate-y-1/2 rounded-full border-blue-200 bg-white/95 shadow-md transition hover:border-blue-300 hover:bg-white"
                       onClick={() => scrollSubCategories("left")}
                     >
                       <ChevronLeft className="h-4 w-4" />
@@ -1017,7 +1133,7 @@ const Menu = () => {
                     <Button
                       variant="outline"
                       size="icon"
-                      className="absolute right-0 top-1/2 z-10 -translate-y-1/2 rounded-full border-blue-200 bg-white/95 shadow-md transition hover:border-blue-300 hover:bg-white"
+                      className="absolute right-0 top-1/2 z-30 -translate-y-1/2 rounded-full border-blue-200 bg-white/95 shadow-md transition hover:border-blue-300 hover:bg-white"
                       onClick={() => scrollSubCategories("right")}
                     >
                       <ChevronRight className="h-4 w-4" />
@@ -1030,15 +1146,22 @@ const Menu = () => {
                         ? String(sortedSubCategories[0]?.id ?? "")
                         : "all-sub")
                     }
-                    className="sticky top-[168px] -mx-8 bg-white/95 px-8 pb-4 pt-2 backdrop-blur"
+                    className=""
                   >
                     <div
                       ref={subTabsContainerRef}
-                      className="flex overflow-x-auto scrollbar-hide"
+                      className="flex overflow-x-auto scrollbar-hide justify-center"
                       style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
                       onScroll={checkSubScrollPosition}
                     >
                       <TabsList className="flex w-max gap-2 rounded-2xl border border-orange-100 bg-orange-50/60 p-1">
+                        {/* <TabsTrigger
+                          value="all-sub"
+                          onClick={() => handleSubCategorySelect(null)}
+                          className="rounded-xl px-4 py-2 text-sm font-medium text-gray-700 transition hover:bg-white data-[state=active]:bg-white data-[state=active]:text-orange-600 data-[state=active]:shadow-sm"
+                        >
+                          {t("all") || "All"}
+                        </TabsTrigger> */}
                         {sortedSubCategories.map((subCategory) => (
                           <TabsTrigger
                             key={subCategory?.id ?? `sub-${subCategory?.name}`}
@@ -1056,6 +1179,92 @@ const Menu = () => {
                       </TabsList>
                     </div>
                   </Tabs>
+                </div>
+
+                <div className="relative hidden lg:block">
+                  {showSubLeftArrow && (
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      className="absolute left-0 top-1/2 z-10 -translate-y-1/2 rounded-full border-blue-200 bg-white/95 shadow-md transition hover:border-blue-300 hover:bg-white lg:hidden"
+                      onClick={() => scrollSubCategories("left")}
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                    </Button>
+                  )}
+                  {showSubRightArrow && (
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      className="absolute right-0 top-1/2 z-10 -translate-y-1/2 rounded-full border-blue-200 bg-white/95 shadow-md transition hover:border-blue-300 hover:bg-white lg:hidden"
+                      onClick={() => scrollSubCategories("right")}
+                    >
+                      <ChevronRight className="h-4 w-4" />
+                    </Button>
+                  )}
+                  <div className="relative">
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      className="absolute left-0 top-1/2 z-10 -translate-y-1/2 rounded-full border-blue-200 bg-white/95 shadow-md transition hover:border-blue-300 hover:bg-white disabled:opacity-50 disabled:cursor-not-allowed lg:hidden"
+                      onClick={() => scrollSubCategoriesMobile("left")}
+                      onMouseDown={() => startSubContinuousScroll("left")}
+                      onMouseUp={stopSubContinuousScroll}
+                      onMouseLeave={stopSubContinuousScroll}
+                      onTouchStart={() => startSubContinuousScroll("left")}
+                      onTouchEnd={stopSubContinuousScroll}
+                      disabled={!showSubLeftArrowMobile}
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      className="absolute right-0 top-1/2 z-10 -translate-y-1/2 rounded-full border-blue-200 bg-white/95 shadow-md transition hover:border-blue-300 hover:bg-white disabled:opacity-50 disabled:cursor-not-allowed lg:hidden"
+                      onClick={() => scrollSubCategoriesMobile("right")}
+                      onMouseDown={() => startSubContinuousScroll("right")}
+                      onMouseUp={stopSubContinuousScroll}
+                      onMouseLeave={stopSubContinuousScroll}
+                      onTouchStart={() => startSubContinuousScroll("right")}
+                      onTouchEnd={stopSubContinuousScroll}
+                      disabled={!showSubRightArrowMobile}
+                    >
+                      <ChevronRight className="h-4 w-4" />
+                    </Button>
+                    <Tabs
+                      value={
+                        activeSubCategory ||
+                        (sortedSubCategories.length > 0
+                          ? String(sortedSubCategories[0]?.id ?? "")
+                          : "")
+                      }
+                      className="sticky top-[168px] -mx-8 bg-white/95 px-8 pb-4 pt-2 backdrop-blur"
+                    >
+                      <div
+                        ref={mobileSubTabsContainerRef}
+                        className="flex overflow-x-auto scrollbar-hide"
+                        style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
+                        onScroll={checkMobileSubScrollPosition}
+                      >
+                        <TabsList className="flex w-max gap-2 rounded-2xl border border-orange-100 bg-orange-50/60 p-1">
+                          {sortedSubCategories.map((subCategory) => (
+                            <TabsTrigger
+                              key={subCategory?.id ?? `sub-${subCategory?.name}`}
+                              value={subCategory?.id ? String(subCategory.id) : ""}
+                              onClick={() =>
+                                handleSubCategorySelect(
+                                  subCategory?.id ? String(subCategory.id) : null
+                                )
+                              }
+                              className="rounded-xl px-4 py-2 text-sm font-medium text-gray-700 transition hover:bg-white data-[state=active]:bg-white data-[state=active]:text-orange-600 data-[state=active]:shadow-sm"
+                            >
+                              {subCategory?.name || "Unknown Subcategory"}
+                            </TabsTrigger>
+                          ))}
+                        </TabsList>
+                      </div>
+                    </Tabs>
+                  </div>
                 </div>
               </>
             )}

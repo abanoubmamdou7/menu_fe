@@ -9,6 +9,13 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Table,
   TableBody,
   TableCell,
@@ -104,6 +111,9 @@ const AdminCategories = () => {
   const [isLoadingCategories, setIsLoadingCategories] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
+  const [selectedBranch, setSelectedBranch] = useState<string>("all");
+  const [selectedCategory, setSelectedCategory] = useState<string>("all");
+  const [debouncedSearch, setDebouncedSearch] = useState<string>("");
 
   const form = useForm<CategoryFormData>({
     defaultValues: {
@@ -144,6 +154,14 @@ const AdminCategories = () => {
 
   useEffect(() => {
     setCurrentPage(1);
+  }, [searchTerm, selectedBranch, selectedCategory]);
+
+  // Debounce search to avoid filtering on each keystroke
+  useEffect(() => {
+    const handle = window.setTimeout(() => {
+      setDebouncedSearch(searchTerm);
+    }, 250);
+    return () => window.clearTimeout(handle);
   }, [searchTerm]);
 
   const fetchAllCategories = useCallback(async () => {
@@ -161,9 +179,13 @@ const AdminCategories = () => {
             nested_level,
             parent_group_code,
             path,
-            branch_code
+            branch_code,
+            saleable,
+            show_in_website
           `
         )
+        .eq("saleable", true)
+        .eq("show_in_website", true)
         .order("order_group", { ascending: true });
 
       if (error) throw error;
@@ -197,6 +219,20 @@ const AdminCategories = () => {
   useEffect(() => {
     fetchAllCategories();
   }, [fetchAllCategories]);
+  const branchOptions = useMemo<string[]>(() => {
+    const set = new Set<string>();
+    categories.forEach((c) => {
+      if (c.branchCode) set.add(c.branchCode);
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [categories]);
+  const categoryOptions = useMemo<string[]>(() => {
+    const set = new Set<string>();
+    categories.forEach((c) => {
+      if (c.name) set.add(c.name);
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [categories]);
 
   const handleAddCategory = useCallback(() => {
     setIsEditing(false);
@@ -354,17 +390,29 @@ const AdminCategories = () => {
   );
 
   const filteredCategories = useMemo(() => {
-    const term = searchTerm.trim().toLowerCase();
-    return categories
-      .filter((category) =>
-        term ? category.name.toLowerCase().includes(term) : true
-      )
-      .sort((a, b) => {
-        const orderA = a.orderGroup ?? 0;
-        const orderB = b.orderGroup ?? 0;
-        return orderA - orderB;
-      });
-  }, [categories, searchTerm]);
+    const term = debouncedSearch.trim().toLowerCase();
+    const byBranch = (list: MenuCategoryWithBranch[]) =>
+      selectedBranch === "all"
+        ? list
+        : list.filter(
+            (c) => (c.branchCode ?? "") === (selectedBranch ?? "")
+          );
+    const byCategory = (list: MenuCategoryWithBranch[]) =>
+      selectedCategory === "all"
+        ? list
+        : list.filter((c) => c.name === selectedCategory);
+    const bySearch = (list: MenuCategoryWithBranch[]) =>
+      term
+        ? list.filter((c) => c.name.toLowerCase().includes(term))
+        : list;
+    const afterBranch = byBranch(categories);
+    const afterCategory = byCategory(afterBranch);
+    return bySearch(afterCategory).sort((a, b) => {
+      const orderA = a.orderGroup ?? 0;
+      const orderB = b.orderGroup ?? 0;
+      return orderA - orderB;
+    });
+  }, [categories, debouncedSearch, selectedBranch, selectedCategory]);
 
   const totalPages = useMemo(
     () => Math.max(1, Math.ceil(filteredCategories.length / ITEMS_PER_PAGE)),
@@ -408,32 +456,65 @@ const AdminCategories = () => {
   );
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-orange-50 via-white to-orange-100 px-4 py-10">
-      <div className="mx-auto flex max-w-6xl flex-col gap-8">
-        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+    <div className="min-h-screen bg-gradient-to-br from-orange-50 via-white to-orange-100 px-3 py-6 sm:px-4 sm:py-8">
+      <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 sm:gap-8">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div className="flex flex-col items-start gap-3 md:flex-row md:items-center md:gap-4">
             <div className="flex items-center gap-3">
               <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-orange-500 via-orange-400 to-amber-500 shadow-lg">
                 <FolderKanban className="h-6 w-6 text-white" />
               </div>
-              <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:gap-3">
-                <h1 className="text-3xl font-bold text-gray-900">Categories</h1>
-                <p className="text-sm text-gray-600">
-                  Manage item groupings, display order, and branch assignments.
-                </p>
+              <div className="flex flex-col gap-1">
+                <h1 className="text-2xl font-bold text-gray-900 sm:text-3xl">
+                  Categories
+                </h1>
               </div>
             </div>
-
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-            <div className="relative w-full sm:w-64">
-              <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Search categories..."
-                value={searchTerm}
-                onChange={(event) => setSearchTerm(event.target.value)}
-                className="pl-9"
-              />
+            <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+              <div className="relative w-full sm:w-48">
+                <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-2 text-muted-foreground" />
+                <Input
+                  placeholder="Search categories..."
+                  value={searchTerm}
+                  onChange={(event) => setSearchTerm(event.target.value)}
+                  className="pl-9"
+                />
+              </div>
+              <Select
+                value={selectedBranch}
+                onValueChange={(value) => setSelectedBranch(value)}
+              >
+                <SelectTrigger className="sm:w-48">
+                  <SelectValue placeholder="Branch" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Branches</SelectItem>
+                  {branchOptions.map((b) => (
+                    <SelectItem key={b} value={b}>
+                      {b}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select
+                value={selectedCategory}
+                onValueChange={(value) => setSelectedCategory(value)}
+              >
+                <SelectTrigger className="sm:w-56">
+                  <SelectValue placeholder="Category" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Categories</SelectItem>
+                  {categoryOptions.map((c) => (
+                    <SelectItem key={c} value={c}>
+                      {c}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
-            <div className="flex gap-2">
+          </div>
+          <div className="flex gap-2">
               <Button
                 type="button"
                 variant="outline"
@@ -452,31 +533,32 @@ const AdminCategories = () => {
                 Refresh
               </Button>
               <Button
+                size="sm"
                 onClick={handleAddCategory}
-                className="bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 shadow-md"
+                className="bg-gradient-to-r from-orange-500 to-orange-600 shadow-md hover:from-orange-600 hover:to-orange-700 px-3"
               >
-                <Plus className="mr-1 h-4 w-4" />
+                <Plus className="mr-1 h-3 w-3" />
                 Add Category
               </Button>
             </div>
           </div>
+        </div>
 
-          <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge
+            variant="outline"
+            className="border-orange-200 bg-orange-50 text-orange-700"
+          >
+            Total: {categories.length}
+          </Badge>
+          {(debouncedSearch || selectedBranch !== "all" || selectedCategory !== "all") && (
             <Badge
-              variant="outline"
-              className="border-orange-200 bg-orange-50 text-orange-700"
+              variant="secondary"
+              className="border-orange-200 bg-orange-100 text-orange-700"
             >
-              Total: {categories.length}
+              Showing {filteredCategories.length} results
             </Badge>
-            {searchTerm && (
-              <Badge
-                variant="secondary"
-                className="border-orange-200 bg-orange-100 text-orange-700"
-              >
-                Showing {filteredCategories.length} results
-              </Badge>
-            )}
-          </div>
+          )}
         </div>
 
         <div className="overflow-hidden rounded-3xl border border-orange-100 bg-white/95 shadow-lg backdrop-blur-sm">
@@ -485,77 +567,158 @@ const AdminCategories = () => {
               {fetchError}
             </div>
           )}
-          <Table>
-            <TableHeader className="bg-orange-50/40">
-              <TableRow className="uppercase text-xs tracking-wide text-gray-500">
-                <TableHead className="w-[180px]">Category Code</TableHead>
-                <TableHead>Name</TableHead>
-                <TableHead className="w-[140px]">Order</TableHead>
-                <TableHead className="w-[160px]">Branch</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {isLoadingCategories ? (
-                tableSkeleton
-              ) : paginatedCategories.length === 0 ? (
-                <TableRow>
-                  <TableCell
-                    colSpan={5}
-                    className="py-12 text-center text-sm text-muted-foreground"
-                  >
-                    No categories found. Try adjusting your search.
-                  </TableCell>
+          {/* Desktop/Tablet table */}
+          <div className="hidden md:block">
+            <Table>
+              <TableHeader className="bg-orange-50/40 sticky top-0 z-10">
+                <TableRow className="uppercase text-xs tracking-wide text-gray-500">
+                  <TableHead className="w-[180px]">Category Code</TableHead>
+                  <TableHead>Name</TableHead>
+                  <TableHead className="w-[140px]">Order</TableHead>
+                  <TableHead className="w-[160px]">Branch</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
-              ) : (
-                paginatedCategories.map((category) => {
+              </TableHeader>
+              <TableBody>
+                {isLoadingCategories ? (
+                  tableSkeleton
+                ) : paginatedCategories.length === 0 ? (
+                  <TableRow>
+                    <TableCell
+                      colSpan={5}
+                      className="py-12 text-center text-sm text-muted-foreground"
+                    >
+                      No categories found. Try adjusting your search.
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  paginatedCategories.map((category) => {
+                    const categoryKey = buildCategoryKey(
+                      category.id,
+                      category.branchCode
+                    );
+                    return (
+                      <TableRow key={categoryKey} className="hover:bg-orange-50/30">
+                        <TableCell className="font-mono text-sm text-gray-600">
+                          {category.id}
+                        </TableCell>
+                        <TableCell>
+                          <div className="font-medium text-gray-900">
+                            {category.name || "Untitled category"}
+                          </div>
+                          {category.nameAr && (
+                            <div className="text-xs text-muted-foreground">
+                              {category.nameAr}
+                            </div>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <Input
+                            type="number"
+                            value={
+                              orderInputs[categoryKey] ??
+                              category.orderGroup ??
+                              ""
+                            }
+                            onChange={(event) =>
+                              handleOrderChange(categoryKey, event.target.value)
+                            }
+                            onBlur={() =>
+                              handleOrderSave(category, categoryKey)
+                            }
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter") {
+                                event.preventDefault();
+                                handleOrderSave(category, categoryKey);
+                              }
+                            }}
+                            className="w-24 text-center"
+                          />
+                        </TableCell>
+                        <TableCell className="text-sm text-gray-600">
+                          {category.branchCode || "—"}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex items-center justify-end gap-2">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleEditCategory(category)}
+                            >
+                              <Edit className="h-4 w-4" />
+                              <span className="sr-only">Edit</span>
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleDeleteCategory(category)}
+                              className="text-red-500 hover:text-red-600 hover:bg-red-50"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                              <span className="sr-only">Delete</span>
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })
+                )}
+              </TableBody>
+            </Table>
+          </div>
+          {/* Mobile cards */}
+          <div className="md:hidden">
+            {isLoadingCategories ? (
+              <div className="divide-y divide-orange-100">
+                {Array.from({ length: Math.min(ITEMS_PER_PAGE, 5) }).map(
+                  (_, i) => (
+                    <div key={`cat-skel-${i}`} className="p-4">
+                      <Skeleton className="h-4 w-32 rounded-full" />
+                      <div className="mt-2 flex items-center justify-between">
+                        <Skeleton className="h-4 w-40 rounded-full" />
+                        <Skeleton className="h-8 w-16 rounded-md" />
+                      </div>
+                      <Skeleton className="mt-2 h-3 w-24 rounded-full" />
+                    </div>
+                  )
+                )}
+              </div>
+            ) : paginatedCategories.length === 0 ? (
+              <div className="p-6 text-center text-sm text-muted-foreground">
+                No categories found. Try adjusting your search.
+              </div>
+            ) : (
+              <div className="divide-y divide-orange-100">
+                {paginatedCategories.map((category) => {
                   const categoryKey = buildCategoryKey(
                     category.id,
                     category.branchCode
                   );
                   return (
-                    <TableRow key={categoryKey} className="hover:bg-orange-50/30">
-                      <TableCell className="font-mono text-sm text-gray-600">
-                        {category.id}
-                      </TableCell>
-                      <TableCell>
-                        <div className="font-medium text-gray-900">
-                          {category.name || "Untitled category"}
-                        </div>
-                        {category.nameAr && (
-                          <div className="text-xs text-muted-foreground">
-                            {category.nameAr}
+                    <div key={categoryKey} className="p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <div className="font-mono text-xs text-gray-600">
+                            {category.id}
                           </div>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        <Input
-                          type="number"
-                          value={
-                            orderInputs[categoryKey] ??
-                            category.orderGroup ??
-                            ""
-                          }
-                          onChange={(event) =>
-                            handleOrderChange(categoryKey, event.target.value)
-                          }
-                          onBlur={() =>
-                            handleOrderSave(category, categoryKey)
-                          }
-                          onKeyDown={(event) => {
-                            if (event.key === "Enter") {
-                              event.preventDefault();
-                              handleOrderSave(category, categoryKey);
-                            }
-                          }}
-                          className="w-24 text-center"
-                        />
-                      </TableCell>
-                      <TableCell className="text-sm text-gray-600">
-                        {category.branchCode || "—"}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex items-center justify-end gap-2">
+                          <div className="mt-1 text-base font-semibold text-gray-900">
+                            {category.name || "Untitled category"}
+                          </div>
+                          {category.nameAr && (
+                            <div className="text-xs text-muted-foreground">
+                              {category.nameAr}
+                            </div>
+                          )}
+                          <div className="mt-2 flex flex-wrap items-center gap-2">
+                            <Badge variant="outline">
+                              Branch: {category.branchCode || "—"}
+                            </Badge>
+                            <Badge variant="outline">
+                              Order: {category.orderGroup ?? "—"}
+                            </Badge>
+                          </div>
+                        </div>
+                        <div className="flex shrink-0 items-center gap-1">
                           <Button
                             variant="ghost"
                             size="icon"
@@ -574,13 +737,37 @@ const AdminCategories = () => {
                             <span className="sr-only">Delete</span>
                           </Button>
                         </div>
-                      </TableCell>
-                    </TableRow>
+                      </div>
+                      <div className="mt-3">
+                        <label className="mb-1 block text-xs text-muted-foreground">
+                          Order
+                        </label>
+                        <Input
+                          type="number"
+                          value={
+                            orderInputs[categoryKey] ??
+                            category.orderGroup ??
+                            ""
+                          }
+                          onChange={(event) =>
+                            handleOrderChange(categoryKey, event.target.value)
+                          }
+                          onBlur={() => handleOrderSave(category, categoryKey)}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter") {
+                              event.preventDefault();
+                              handleOrderSave(category, categoryKey);
+                            }
+                          }}
+                          className="w-28"
+                        />
+                      </div>
+                    </div>
                   );
-                })
-              )}
-            </TableBody>
-          </Table>
+                })}
+              </div>
+            )}
+          </div>
         </div>
 
         {totalPages > 1 && (
@@ -750,7 +937,6 @@ const AdminCategories = () => {
           </SheetContent>
         </Sheet>
       </div>
-    </div>
   );
 };
 
