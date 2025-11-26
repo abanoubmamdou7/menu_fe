@@ -73,9 +73,13 @@ export const updateRestaurantInfo = async (
     }
 
     if (!currentInfo?.id) {
+      // Generate UUID for new record
+      const newId = crypto.randomUUID();
+      
       const { data, error } = await supabase
         .from("restaurant_info")
         .insert({
+          id: newId,
           name,
           slogan,
           logo_url: logoUrl,

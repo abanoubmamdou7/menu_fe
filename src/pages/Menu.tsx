@@ -24,6 +24,7 @@ import {
   useSubCategories,
   MenuItem,
   MenuCategory,
+  usePrefetchMenuData,
 } from "@/services/menuServices";
 import { useTranslation } from "@/hooks/useTranslation";
 import { useLanguage } from "@/hooks/useLanguage";
@@ -33,6 +34,7 @@ import { cn } from "@/lib/utils";
 import { useRestaurantInfo } from "../services/restaurantInfoService.ts";
 import { useSortedMenuItems } from "@/hooks/useSortedMenuItems.ts";
 import { useMenuItemImage } from "../getImageSrc.ts";
+import { LazyImage } from "@/components/LazyImage";
 
 // Enhanced view styles with professional improvements
 const VIEW_STYLES = {
@@ -118,14 +120,11 @@ const GridMenuItem = React.memo(
   return (
     <div className="group cursor-pointer h-full flex flex-col">
       <div className="relative aspect-square mb-4 overflow-hidden rounded-xl bg-gradient-to-br from-orange-50 to-orange-100">
-        <img
+        <LazyImage
           src={getImageSrc(item)}
           alt={item.name}
-          className="w-full h-full object-cover transition-transform duration-500 ease-out group-hover:scale-105"
-          loading="lazy"
-          onError={(event) => {
-            event.currentTarget.src = "/placeholder-food.jpg";
-          }}
+          className="transition-transform duration-500 ease-out group-hover:scale-105"
+          placeholder="/placeholder-food.jpg"
         />
         <div className="absolute inset-0 bg-gradient-to-t from-orange-900/30 via-transparent to-transparent opacity-0 transition-opacity duration-500 group-hover:opacity-100" />
       </div>
@@ -177,14 +176,11 @@ const ListMenuItem = React.memo(
   return (
     <div className="group flex cursor-pointer items-center gap-5 rounded-xl border border-orange-100/50 bg-white/90 p-5 shadow-sm transition-all duration-300 hover:border-orange-200 hover:shadow-lg">
       <div className="h-20 w-20 flex-shrink-0 overflow-hidden rounded-xl bg-gradient-to-br from-orange-50 to-orange-100">
-        <img
+        <LazyImage
           src={getImageSrc(item)}
           alt={item.name}
-          className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
-          loading="lazy"
-          onError={(event) => {
-            event.currentTarget.src = "/placeholder-food.jpg";
-          }}
+          className="transition-transform duration-500 group-hover:scale-105"
+          placeholder="/placeholder-food.jpg"
         />
       </div>
       <div className="min-w-0 flex-1">
@@ -231,14 +227,11 @@ const CardMenuItem = React.memo(
     <div className="group cursor-pointer overflow-hidden rounded-2xl border border-orange-100/60 bg-white/95 shadow-sm transition-all duration-300 hover:border-orange-200 hover:shadow-xl">
       <div className="flex flex-col sm:flex-row">
         <div className="relative h-56 w-full flex-shrink-0 bg-gradient-to-br from-orange-50 to-orange-100 sm:h-40 sm:w-48 md:h-48 md:w-56">
-          <img
+          <LazyImage
             src={getImageSrc(item)}
             alt={item.name}
-            className="h-full w-full object-cover transition-transform duration-500 ease-out group-hover:scale-105"
-            loading="lazy"
-            onError={(event) => {
-              event.currentTarget.src = "/placeholder-food.jpg";
-            }}
+            className="transition-transform duration-500 ease-out group-hover:scale-105"
+            placeholder="/placeholder-food.jpg"
           />
           <div className="absolute inset-0 bg-gradient-to-t from-orange-900/20 via-transparent to-transparent opacity-0 transition-opacity duration-500 group-hover:opacity-100" />
         </div>
@@ -365,6 +358,9 @@ const Menu = () => {
   const mobileTabsContainerRef = useRef<HTMLDivElement | null>(null);
   const mobileSubTabsContainerRef = useRef<HTMLDivElement | null>(null);
 
+  // Prefetch menu data for faster loading
+  usePrefetchMenuData(branchCode);
+
   useEffect(() => {
     setActiveParentCategory(null);
     setActiveSubCategory(null);
@@ -466,12 +462,20 @@ const Menu = () => {
   const {
     data: menuItems = [],
     isLoading: isLoadingItems = false,
+    isFetching: isFetchingItems = false,
     error: itemsError,
+    dataUpdatedAt,
   } = (useMenuItems(branchCode) || {}) as {
     data?: MenuItem[];
     isLoading?: boolean;
+    isFetching?: boolean;
     error?: Error;
+    dataUpdatedAt?: number;
   };
+
+  // Use cached data immediately if available while fetching fresh data
+  const shouldShowCachedData = !isLoadingItems && menuItems.length > 0;
+  const isInitialLoad = isLoadingItems && menuItems.length === 0;
 
   const visibleMenuItems = React.useMemo<MenuItem[]>(() => {
     if (!Array.isArray(menuItems)) return [];
@@ -561,6 +565,10 @@ const Menu = () => {
     if (!showAllCategory && !activeParentCategory && !activeSubCategory)
       return [];
 
+    // Early return if no items to filter
+    if (visibleMenuItems.length === 0) return [];
+
+    // Use more efficient filtering with early exits
     if (activeSubCategory) {
       return visibleMenuItems.filter(
         (item) => item?.category === activeSubCategory
@@ -886,9 +894,13 @@ const Menu = () => {
   }
 
   const skeletonCount = validViewKey === "grid" ? 8 : 6;
-  const isLoadingContent = isLoadingItems || isLoadingSubCategories;
+  // Show loading only on initial load, not when refetching (we show cached data)
+  const isLoadingContent = isInitialLoad || isLoadingSubCategories;
   const hasItems =
     Array.isArray(sortedFilteredItems) && sortedFilteredItems.length > 0;
+  
+  // Show subtle loading indicator when refreshing in background
+  const isRefreshing = isFetchingItems && !isInitialLoad && shouldShowCachedData;
 
   return (
     <div
@@ -1273,12 +1285,21 @@ const Menu = () => {
 
         <section
           className={cn(
-            "pt-6",
+            "relative pt-6",
             activeParentCategory && sortedSubCategories.length > 0
               ? "lg:pt-4"
               : undefined
           )}
         >
+          {/* Subtle loading indicator when refreshing in background */}
+          {isRefreshing && (
+            <div className="absolute top-0 right-0 z-50 m-4">
+              <div className="flex items-center gap-2 rounded-full bg-white/90 px-3 py-1.5 text-xs font-medium text-orange-600 shadow-md backdrop-blur-sm">
+                <div className="h-2 w-2 animate-pulse rounded-full bg-orange-500" />
+                Updating...
+              </div>
+            </div>
+          )}
           {isLoadingContent ? (
             <div className={currentViewStyle.containerClass}>
               {Array.from({ length: skeletonCount }).map((_, index) => (
@@ -1302,23 +1323,23 @@ const Menu = () => {
             </div>
           ) : (
             <div className={currentViewStyle.containerClass}>
-              {hasItems ? (
-                sortedFilteredItems.map((item, index) => {
-                  if (!item) return null;
-                  return (
-                    <div
-                      key={item.id || index}
-                      className={cn(currentViewStyle.itemClass)}
-                    >
-                      <MenuItemComponent
-                        item={item}
-                        language={language}
-                        getImageSrc={getImageSrc}
-                      />
-                    </div>
-                  );
-                })
-              ) : (
+                {hasItems ? (
+                  sortedFilteredItems.map((item, index) => {
+                    if (!item) return null;
+                    return (
+                      <div
+                        key={item.id || index}
+                        className={cn(currentViewStyle.itemClass)}
+                      >
+                        <MenuItemComponent
+                          item={item}
+                          language={language}
+                          getImageSrc={getImageSrc}
+                        />
+                      </div>
+                    );
+                  })
+                ) : (
                 <div className="col-span-full flex flex-col items-center rounded-2xl border border-orange-100 bg-white px-6 py-16 text-center shadow-sm">
                   <div className="flex h-16 w-16 items-center justify-center rounded-full bg-orange-100 text-orange-500">
                     <LayoutGrid className="h-6 w-6" />

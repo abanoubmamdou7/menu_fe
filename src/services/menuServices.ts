@@ -471,46 +471,103 @@ const resolveBranchCode = async (
   return cachedBranchCode;
 };
 
+// Cache for tags to avoid repeated fetches
+let cachedTagIconsMap: Record<string, string | null> | null = null;
+let tagsCacheTimestamp = 0;
+const TAGS_CACHE_TTL = 1000 * 60 * 30; // 30 minutes
+
+const fetchTagIcons = async (): Promise<Record<string, string | null>> => {
+  const now = Date.now();
+  if (cachedTagIconsMap && now - tagsCacheTimestamp < TAGS_CACHE_TTL) {
+    return cachedTagIconsMap;
+  }
+
+  const { data: tagData, error: tagError } = await supabase
+    .from("tags")
+    .select("fasting, vegetarian, healthy_choice, signature_dish, spicy")
+    .limit(1)
+    .maybeSingle();
+
+  if (tagError && tagError.code !== "PGRST116") {
+    console.warn("Failed to fetch tags:", tagError);
+    return {
+      fasting: null,
+      vegetarian: null,
+      healthyChoice: null,
+      signatureDish: null,
+      spicy: null,
+    };
+  }
+
+  cachedTagIconsMap = tagData
+    ? {
+        fasting: getImageUrl({ url: tagData.fasting }),
+        vegetarian: getImageUrl({ url: tagData.vegetarian }),
+        healthyChoice: getImageUrl({ url: tagData.healthy_choice }),
+        signatureDish: getImageUrl({ url: tagData.signature_dish }),
+        spicy: getImageUrl({ url: tagData.spicy }),
+      }
+    : {
+        fasting: null,
+        vegetarian: null,
+        healthyChoice: null,
+        signatureDish: null,
+        spicy: null,
+      };
+  tagsCacheTimestamp = now;
+  return cachedTagIconsMap;
+};
+
 export const fetchMenuItems = async (
   branchOverride?: string | null
 ): Promise<MenuItem[]> => {
   try {
     const normalizedOverride =
       typeof branchOverride === "string" ? branchOverride.trim() : branchOverride;
-    const branchCode = await resolveBranchCode(normalizedOverride);
+    
+    // Parallel fetch: branch code resolution, items, and tags
+    const [branchCode, tagIconsMap] = await Promise.all([
+      resolveBranchCode(normalizedOverride),
+      fetchTagIcons(),
+    ]);
 
-    const items = await fetchPaginatedResource("/api/items/items", {
-      page: 1,
-      limit: 200,
-      branchCode: branchCode || undefined,
-    });
+    // Select only needed fields for better performance
+    let query = supabase
+      .from("item_master")
+      .select(`
+        id,
+        itm_code,
+        itm_name,
+        website_name_en,
+        website_name_ar,
+        website_description_en,
+        website_description_ar,
+        sales_price,
+        itm_group_code,
+        image,
+        item_order,
+        show_in_website,
+        saleable,
+        branch_code,
+        fasting,
+        vegetarian,
+        healthy_choice,
+        signature_dish,
+        spicy
+      `)
+      .eq("show_in_website", true)
+      .eq("saleable", true);
 
-    const { data: tagData, error: tagError } = await supabase
-      .from("tags")
-      .select("*")
-      .limit(1)
-      .maybeSingle();
+    if (branchCode) {
+      query = query.eq("branch_code", branchCode);
+    }
 
-    if (tagError && tagError.code !== "PGRST116") throw tagError;
+    const { data: items, error: itemsError } = await query.order("item_order", { ascending: true, nullsFirst: false });
 
-    const tagIconsMap: Record<string, string | null> = tagData
-      ? {
-          fasting: getImageUrl({ url: tagData.fasting }),
-          vegetarian: getImageUrl({ url: tagData.vegetarian }),
-          healthyChoice: getImageUrl({ url: tagData.healthy_choice }),
-          signatureDish: getImageUrl({ url: tagData.signature_dish }),
-          spicy: getImageUrl({ url: tagData.spicy }),
-        }
-      : {
-          fasting: null,
-          vegetarian: null,
-          healthyChoice: null,
-          signatureDish: null,
-          spicy: null,
-        };
+    if (itemsError) throw itemsError;
 
     return Array.isArray(items)
-      ? items.map((item) => normalizeMenuItem(item, tagIconsMap))
+      ? items.map((item) => normalizeMenuItem({ ...item, id: String(item.id) }, tagIconsMap))
       : [];
   } catch (error) {
     console.error("❌ Error fetching menu items:", error);
@@ -526,11 +583,29 @@ export const fetchAllMenuCategories = async (
       typeof branchOverride === "string" ? branchOverride.trim() : branchOverride;
     const branchCode = await resolveBranchCode(normalizedOverride);
 
-    const categories = await fetchPaginatedResource("/api/items/categories/all", {
-      page: 1,
-      limit: 200,
-      branchCode: branchCode || undefined,
-    });
+    // Direct Supabase query with only needed fields
+    let query = supabase
+      .from("item_main_group")
+      .select(`
+        itm_group_code,
+        itm_group_name,
+        website_name_en,
+        website_name_ar,
+        order_group,
+        nested_level,
+        parent_group_code,
+        path
+      `)
+      .eq("show_in_website", true)
+      .eq("saleable", true);
+
+    if (branchCode) {
+      query = query.eq("branch_code", branchCode);
+    }
+
+    const { data: categories, error } = await query.order("order_group", { ascending: true, nullsFirst: false });
+
+    if (error) throw error;
 
     return Array.isArray(categories)
       ? categories.map((category) => normalizeCategory(category))
@@ -549,11 +624,30 @@ export const fetchMenuCategories = async (
       typeof branchOverride === "string" ? branchOverride.trim() : branchOverride;
     const branchCode = await resolveBranchCode(normalizedOverride);
 
-    const categories = await fetchPaginatedResource("/api/items/categories", {
-      page: 1,
-      limit: 200,
-      branchCode: branchCode || undefined,
-    });
+    // Direct Supabase query for parent categories (nested_level = 1)
+    let query = supabase
+      .from("item_main_group")
+      .select(`
+        itm_group_code,
+        itm_group_name,
+        website_name_en,
+        website_name_ar,
+        order_group,
+        nested_level,
+        parent_group_code,
+        path
+      `)
+      .eq("show_in_website", true)
+      .eq("saleable", true)
+      .eq("nested_level", 1);
+
+    if (branchCode) {
+      query = query.eq("branch_code", branchCode);
+    }
+
+    const { data: categories, error } = await query.order("order_group", { ascending: true, nullsFirst: false });
+
+    if (error) throw error;
 
     return Array.isArray(categories)
       ? categories.map((category) => normalizeCategory(category))
@@ -577,19 +671,35 @@ export const fetchSubCategories = async (
       typeof branchOverride === "string" ? branchOverride.trim() : branchOverride;
     const branchCode = await resolveBranchCode(normalizedOverride);
 
-    const response = await fetchFromApi(`/api/items/categories/${encodeURIComponent(parentGroupCode)}`, {
-      page: 1,
-      limit: 200,
-      branchCode: branchCode || undefined,
-    });
+    // Direct Supabase query for subcategories
+    let query = supabase
+      .from("item_main_group")
+      .select(`
+        itm_group_code,
+        itm_group_name,
+        website_name_en,
+        website_name_ar,
+        order_group,
+        nested_level,
+        parent_group_code,
+        path
+      `)
+      .eq("show_in_website", true)
+      .eq("saleable", true)
+      .eq("parent_group_code", parentGroupCode)
+      .eq("nested_level", 2);
 
-    const categories = Array.isArray(response?.data)
-      ? response.data
-      : Array.isArray(response)
-      ? response
+    if (branchCode) {
+      query = query.eq("branch_code", branchCode);
+    }
+
+    const { data: categories, error } = await query.order("order_group", { ascending: true, nullsFirst: false });
+
+    if (error) throw error;
+
+    return Array.isArray(categories)
+      ? categories.map((category) => normalizeCategory(category))
       : [];
-
-    return categories.map((category) => normalizeCategory(category));
   } catch (error) {
     console.error("❌ Error fetching subcategories:", error);
     throw new Error("Failed to fetch subcategories");
@@ -644,13 +754,50 @@ export const uploadMenuItemPhoto = async (
   }
 };
 
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect } from "react";
+
+// Prefetch menu data for faster subsequent loads
+export const prefetchMenuData = async (
+  queryClient: ReturnType<typeof useQueryClient>,
+  branchCode?: string | null
+) => {
+  const key = branchCode ?? "default";
+  
+  // Prefetch in parallel
+  await Promise.all([
+    queryClient.prefetchQuery({
+      queryKey: ["menuItems", key],
+      queryFn: () => fetchMenuItems(branchCode),
+      staleTime: 1000 * 60 * 10,
+    }),
+    queryClient.prefetchQuery({
+      queryKey: ["menuCategories", key],
+      queryFn: () => fetchMenuCategories(branchCode),
+      staleTime: 1000 * 60 * 15,
+    }),
+  ]);
+};
+
+// Combined fetch for initial page load - fetches items and categories in parallel
+export const fetchMenuData = async (branchCode?: string | null) => {
+  const [items, categories] = await Promise.all([
+    fetchMenuItems(branchCode),
+    fetchMenuCategories(branchCode),
+  ]);
+  return { items, categories };
+};
 
 export const useMenuItems = (branchCode?: string | null) => {
   return useQuery({
     queryKey: ["menuItems", branchCode ?? "default"],
     queryFn: () => fetchMenuItems(branchCode),
     enabled: branchCode !== undefined ? branchCode !== null && branchCode !== "" : true,
+    staleTime: 1000 * 60 * 10, // 10 minutes - data stays fresh for 10 mins
+    gcTime: 1000 * 60 * 30, // 30 minutes - cache persists for 30 mins
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
+    placeholderData: (previousData) => previousData, // Show stale data while revalidating
   });
 };
 
@@ -659,6 +806,11 @@ export const useMenuCategories = (branchCode?: string | null) => {
     queryKey: ["menuCategories", branchCode ?? "default"],
     queryFn: () => fetchMenuCategories(branchCode),
     enabled: branchCode !== undefined ? branchCode !== null && branchCode !== "" : true,
+    staleTime: 1000 * 60 * 15, // 15 minutes - categories change less frequently
+    gcTime: 1000 * 60 * 60, // 1 hour - keep categories longer
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
+    placeholderData: (previousData) => previousData,
   });
 };
 
@@ -667,19 +819,38 @@ export const useAllMenuCategories = (branchCode?: string | null) => {
     queryKey: ["allMenuCategories", branchCode ?? "default"],
     queryFn: () => fetchAllMenuCategories(branchCode),
     enabled: branchCode !== undefined ? branchCode !== null && branchCode !== "" : true,
+    staleTime: 1000 * 60 * 15, // 15 minutes
+    gcTime: 1000 * 60 * 60, // 1 hour
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
+    placeholderData: (previousData) => previousData,
   });
 };
 
 export const useSubCategories = (
-  parentGroupCode: string,
+  parentGroupCode: string | null,
   branchCode?: string | null
 ) => {
+  const queryClient = useQueryClient();
+  
+  // Prefetch subcategories for other parent categories
+  useEffect(() => {
+    if (!parentGroupCode) return;
+    
+    // Could prefetch adjacent categories here if needed
+  }, [parentGroupCode, queryClient, branchCode]);
+
   return useQuery({
-    queryKey: ["subCategories", branchCode ?? "default", parentGroupCode],
-    queryFn: () => fetchSubCategories(parentGroupCode, branchCode),
+    queryKey: ["subCategories", branchCode ?? "default", parentGroupCode ?? ""],
+    queryFn: () => fetchSubCategories(parentGroupCode ?? "", branchCode),
     enabled:
       !!parentGroupCode &&
       (branchCode !== undefined ? branchCode !== null && branchCode !== "" : true),
+    staleTime: 1000 * 60 * 15, // 15 minutes
+    gcTime: 1000 * 60 * 60, // 1 hour
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
+    placeholderData: (previousData) => previousData,
   });
 };
 
@@ -691,7 +862,19 @@ export const useCategoryHierarchy = (branchCode?: string | null) => {
       return buildCategoryHierarchy(allCategories);
     },
     enabled: branchCode !== undefined ? branchCode !== null && branchCode !== "" : true,
+    placeholderData: (previousData) => previousData,
   });
+};
+
+// Hook to prefetch menu data on component mount
+export const usePrefetchMenuData = (branchCode?: string | null) => {
+  const queryClient = useQueryClient();
+  
+  useEffect(() => {
+    if (branchCode) {
+      prefetchMenuData(queryClient, branchCode);
+    }
+  }, [queryClient, branchCode]);
 };
 
 export interface MenuItemFormData {
