@@ -77,6 +77,7 @@ export const createLocation = async (location: Omit<Location, "id" | "locationOr
     const { data, error } = await supabase
       .from("locations")
       .insert([{
+        id: crypto.randomUUID(),
         name: location.name,
         address: location.address,
         city: location.city,

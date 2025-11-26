@@ -70,6 +70,7 @@ export const createSocialLink = async (link: Omit<SocialLink, 'id' | 'linksOrder
       .from('social_links')
       .insert([
         {
+          id: crypto.randomUUID(),
           platform: link.platform,
           url: link.url,
         },

@@ -1,4 +1,5 @@
-import React, { useState, useMemo, useCallback, useEffect, memo } from 'react';
+import React, { useState, useMemo, useCallback, useEffect, memo, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -44,7 +45,7 @@ const COLOR_PALETTE = {
   accent: ['#E74C3C', '#9B59B6', '#F39C12', '#1ABC9C', '#16A085']
 };
 
-// Enhanced Color Picker Component
+// Enhanced Color Picker Component with Portal
 const ColorPicker: React.FC<{
   value: string;
   onChange: (color: string) => void;
@@ -54,10 +55,74 @@ const ColorPicker: React.FC<{
 }> = ({ value, onChange, onSave, label, isLoading = false }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [customColor, setCustomColor] = useState(value);
+  const [popupPosition, setPopupPosition] = useState({ top: 0, left: 0 });
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const popupRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setCustomColor(value);
   }, [value]);
+
+  // Calculate popup position when opening
+  useEffect(() => {
+    if (isOpen && buttonRef.current) {
+      const rect = buttonRef.current.getBoundingClientRect();
+      const popupWidth = 300;
+      const popupHeight = 480;
+      const padding = 8;
+
+      // Calculate position - prefer showing above if near bottom, otherwise below
+      let top = rect.bottom + padding;
+      let left = rect.right - popupWidth;
+
+      // Adjust if popup would go off-screen right
+      if (left < padding) {
+        left = padding;
+      }
+
+      // Adjust if popup would go off-screen bottom - show above instead
+      if (top + popupHeight > window.innerHeight - padding) {
+        top = rect.top - popupHeight - padding;
+      }
+
+      // If still off-screen top, center it vertically
+      if (top < padding) {
+        top = Math.max(padding, (window.innerHeight - popupHeight) / 2);
+      }
+
+      setPopupPosition({ top, left });
+    }
+  }, [isOpen]);
+
+  // Close popup when clicking outside
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        popupRef.current && 
+        !popupRef.current.contains(event.target as Node) &&
+        buttonRef.current &&
+        !buttonRef.current.contains(event.target as Node)
+      ) {
+        setIsOpen(false);
+      }
+    };
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setIsOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleEscape);
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [isOpen]);
 
   const handleColorSelect = (color: string) => {
     onChange(color);
@@ -76,117 +141,172 @@ const ColorPicker: React.FC<{
     }
   };
 
+  const popupContent = isOpen && createPortal(
+    <div
+      ref={popupRef}
+      className="fixed z-[9999] min-w-[300px] max-w-[320px] rounded-2xl border border-orange-100 bg-white p-4 shadow-2xl"
+      style={{
+        top: popupPosition.top,
+        left: popupPosition.left,
+        animation: 'fadeInScale 0.15s ease-out',
+      }}
+    >
+      <style>{`
+        @keyframes fadeInScale {
+          from {
+            opacity: 0;
+            transform: scale(0.95);
+          }
+          to {
+            opacity: 1;
+            transform: scale(1);
+          }
+        }
+      `}</style>
+      
+      {/* Header */}
+      <div className="mb-4 flex items-center justify-between">
+        <h4 className="text-sm font-semibold text-slate-900">Color Palette</h4>
+        <button
+          type="button"
+          onClick={() => setIsOpen(false)}
+          className="rounded-full p-1 text-slate-400 hover:bg-orange-50 hover:text-slate-600"
+        >
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+
+      {/* Current color preview */}
+      <div className="mb-4 flex items-center gap-3 rounded-xl bg-orange-50/50 p-3">
+        <div
+          className="h-10 w-10 rounded-lg border-2 border-orange-200 shadow-inner"
+          style={{ backgroundColor: customColor || '#ffffff' }}
+        />
+        <div>
+          <p className="text-xs font-medium text-slate-700">Current Color</p>
+          <p className="font-mono text-sm text-orange-600">{customColor || '#ffffff'}</p>
+        </div>
+      </div>
+
+      {/* Color categories */}
+      <div className="mb-4 max-h-[220px] overflow-y-auto pr-1">
+        {Object.entries(COLOR_PALETTE).map(([category, colors]) => (
+          <div key={category} className="mb-3">
+            <p className="mb-2 text-[11px] font-medium uppercase tracking-wide text-orange-500">
+              {category}
+            </p>
+            <div className="grid grid-cols-5 gap-2">
+              {colors.map((color) => (
+                <button
+                  key={color}
+                  type="button"
+                  onClick={() => handleColorSelect(color)}
+                  className={`h-8 w-8 rounded-lg border-2 transition-all duration-150 hover:scale-110 hover:shadow-md ${
+                    value === color
+                      ? 'border-orange-600 ring-2 ring-orange-300 ring-offset-1'
+                      : 'border-transparent hover:border-orange-200'
+                  }`}
+                  style={{ backgroundColor: color }}
+                  aria-label={`Select color ${color}`}
+                />
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+      
+      {/* Custom color input */}
+      <div className="border-t border-orange-100 pt-3">
+        <label className="mb-2 block text-xs font-semibold text-slate-800">
+          Custom Color
+        </label>
+        <div className="flex gap-2">
+          <div className="relative flex-1">
+            <Input
+              type="text"
+              value={customColor}
+              onChange={(e) => setCustomColor(e.target.value)}
+              placeholder="#RRGGBB"
+              className="rounded-lg border-orange-100 bg-white pr-10 font-mono text-sm"
+              maxLength={7}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  handleCustomColorApply();
+                }
+              }}
+            />
+            <div
+              className="absolute right-2 top-1/2 h-5 w-5 -translate-y-1/2 rounded border border-orange-200"
+              style={{ backgroundColor: /^#[0-9A-Fa-f]{6}$/.test(customColor) ? customColor : '#ffffff' }}
+            />
+          </div>
+          <Button
+            size="sm"
+            onClick={handleCustomColorApply}
+            disabled={!customColor || !/^#[0-9A-Fa-f]{6}$/.test(customColor)}
+            className="bg-orange-500 hover:bg-orange-600"
+          >
+            <Check className="h-4 w-4" />
+          </Button>
+        </div>
+        <p className="mt-1.5 text-[11px] text-slate-500">Format: #RRGGBB (e.g., #FF0000)</p>
+      </div>
+      
+      {/* Action buttons */}
+      <div className="mt-4 flex gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setIsOpen(false)}
+          className="flex-1 border-orange-100 text-slate-600 hover:bg-orange-50"
+        >
+          <X className="mr-1 h-3 w-3" />
+          Close
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => {
+            navigator.clipboard.writeText(value);
+            toast.success('Color copied to clipboard!');
+          }}
+          className="flex-1 border-orange-100 text-slate-600 hover:bg-orange-50"
+        >
+          <Copy className="mr-1 h-3 w-3" />
+          Copy
+        </Button>
+      </div>
+    </div>,
+    document.body
+  );
+
   return (
     <TooltipProvider>
       <Tooltip>
         <TooltipTrigger asChild>
-          <div className="relative">
-            <button
-              type="button"
-              onClick={() => setIsOpen(!isOpen)}
-              disabled={isLoading}
-              className={`flex items-center gap-2 rounded-xl border border-orange-100 bg-white/85 px-3 py-1.5 text-xs font-medium text-slate-700 shadow-sm transition hover:border-orange-200 hover:bg-orange-50 disabled:cursor-not-allowed disabled:opacity-60`}
-              aria-label={label}
-            >
-              <div 
-                className="h-4 w-4 rounded-md border border-orange-200 shadow-sm"
-                style={{ backgroundColor: value || '#ffffff' }}
-              />
-              <Palette className="h-3.5 w-3.5 text-orange-500" />
-              {isLoading && (
-                <div className="h-3 w-3 animate-spin rounded-full border-b-2 border-orange-500" />
-              )}
-            </button>
-            
-            {isOpen && (
-              <div className="absolute right-0 z-30 mt-2 min-w-[280px] max-w-[320px] rounded-2xl border border-orange-100 bg-white/95 p-4 shadow-2xl backdrop-blur-md">
-                <div className="mb-4">
-                  <h4 className="mb-3 text-sm font-semibold text-slate-900">Color Palette</h4>
-                  {Object.entries(COLOR_PALETTE).map(([category, colors]) => (
-                    <div key={category} className="mb-3">
-                      <p className="mb-2 text-[11px] uppercase tracking-wide text-orange-500">
-                        {category}
-                      </p>
-                      <div className="grid grid-cols-5 gap-2">
-                        {colors.map((color) => (
-                          <button
-                            key={color}
-                            type="button"
-                            onClick={() => handleColorSelect(color)}
-                            className={`h-7 w-7 rounded-full border-2 transition-transform duration-150 hover:scale-110 ${
-                              value === color
-                                ? 'border-orange-600 ring-2 ring-orange-300'
-                                : 'border-orange-100'
-                            }`}
-                            style={{ backgroundColor: color }}
-                            aria-label={`Select color ${color}`}
-                          />
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-                
-                <div className="border-t border-orange-100 pt-3">
-                  <label className="mb-2 block text-xs font-semibold text-slate-800">
-                    Custom Color
-                  </label>
-                  <div className="flex gap-2">
-                    <Input
-                      type="text"
-                      value={customColor}
-                      onChange={(e) => setCustomColor(e.target.value)}
-                      placeholder="#RRGGBB"
-                      className="flex-1 rounded-lg border-orange-100 bg-white/90 text-xs font-mono"
-                      maxLength={7}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          handleCustomColorApply();
-                        }
-                      }}
-                    />
-                    <Button
-                      size="sm"
-                      onClick={handleCustomColorApply}
-                      disabled={!customColor || !/^#[0-9A-Fa-f]{6}$/.test(customColor)}
-                    >
-                      <Check className="h-3 w-3" />
-                    </Button>
-                  </div>
-                  <p className="mt-1 text-[11px] text-slate-500">Format: #RRGGBB (e.g., #FF0000)</p>
-                </div>
-                
-                <div className="mt-4 flex gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setIsOpen(false)}
-                    className="flex-1 border-orange-100 text-slate-600 hover:bg-orange-50"
-                  >
-                    <X className="h-3 w-3 mr-1" />
-                    Cancel
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      navigator.clipboard.writeText(value);
-                      toast.success('Color copied to clipboard!');
-                    }}
-                    className="flex-1 border-orange-100 text-slate-600 hover:bg-orange-50"
-                  >
-                    <Copy className="h-3 w-3 mr-1" />
-                    Copy
-                  </Button>
-                </div>
-              </div>
+          <button
+            ref={buttonRef}
+            type="button"
+            onClick={() => setIsOpen(!isOpen)}
+            disabled={isLoading}
+            className={`flex items-center gap-2 rounded-xl border border-orange-100 bg-white/85 px-3 py-1.5 text-xs font-medium text-slate-700 shadow-sm transition hover:border-orange-200 hover:bg-orange-50 disabled:cursor-not-allowed disabled:opacity-60 ${isOpen ? 'border-orange-300 bg-orange-50 ring-2 ring-orange-200' : ''}`}
+            aria-label={label}
+          >
+            <div 
+              className="h-4 w-4 rounded-md border border-orange-200 shadow-sm"
+              style={{ backgroundColor: value || '#ffffff' }}
+            />
+            <Palette className="h-3.5 w-3.5 text-orange-500" />
+            {isLoading && (
+              <div className="h-3 w-3 animate-spin rounded-full border-b-2 border-orange-500" />
             )}
-          </div>
+          </button>
         </TooltipTrigger>
         <TooltipContent className="text-xs">
           <p>{label}</p>
         </TooltipContent>
       </Tooltip>
+      {popupContent}
     </TooltipProvider>
   );
 };

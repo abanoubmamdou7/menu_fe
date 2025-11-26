@@ -53,6 +53,7 @@ interface CategoryFormData {
   itm_group_name: string;
   website_name_en: string;
   show_in_website: boolean;
+  saleable: boolean;
   branch_code: string;
 }
 
@@ -121,6 +122,7 @@ const AdminCategories = () => {
       itm_group_name: "",
       website_name_en: "",
       show_in_website: true,
+      saleable: true,
       branch_code: "",
     },
   });
@@ -133,6 +135,7 @@ const AdminCategories = () => {
           itm_group_name: category.name,
           website_name_en: category.name,
           show_in_website: true,
+          saleable: true,
           branch_code: category.branchCode ?? "",
         });
       } else {
@@ -141,6 +144,7 @@ const AdminCategories = () => {
           itm_group_name: "",
           website_name_en: "",
           show_in_website: true,
+          saleable: true,
           branch_code: "",
         });
       }
@@ -305,6 +309,7 @@ const AdminCategories = () => {
               itm_group_name: data.itm_group_name,
               website_name_en: data.website_name_en,
               show_in_website: data.show_in_website,
+              saleable: data.saleable,
             })
             .eq("itm_group_code", data.itm_group_code)
             .eq("branch_code", data.branch_code);
@@ -317,7 +322,11 @@ const AdminCategories = () => {
             itm_group_name: data.itm_group_name,
             website_name_en: data.website_name_en,
             show_in_website: data.show_in_website,
+            saleable: data.saleable,
             branch_code: data.branch_code,
+            nested_level: 1,
+            parent_group_code: data.itm_group_code,
+            path: data.itm_group_code,
           });
 
           if (error) throw error;
@@ -907,6 +916,29 @@ const AdminCategories = () => {
                         </FormLabel>
                         <p className="text-xs text-muted-foreground">
                           Toggle visibility of this category in the menu.
+                        </p>
+                      </div>
+                      <FormControl>
+                        <Switch
+                          checked={field.value}
+                          onCheckedChange={field.onChange}
+                        />
+                      </FormControl>
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="saleable"
+                  render={({ field }) => (
+                    <FormItem className="flex items-center justify-between rounded-lg border border-orange-100 bg-orange-50/40 px-3 py-2">
+                      <div>
+                        <FormLabel className="mb-0 font-medium text-gray-900">
+                          Saleable
+                        </FormLabel>
+                        <p className="text-xs text-muted-foreground">
+                          Enable or disable sales for this category.
                         </p>
                       </div>
                       <FormControl>
