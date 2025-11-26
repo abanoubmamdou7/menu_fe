@@ -14,6 +14,8 @@ import AdminCustomers from './pages/AdminCustomers';
 import AdminDashboard from './pages/AdminDashboard';
 import AdminLogin from './pages/AdminLogin.tsx';
 import AdminTagsPage from './pages/AdminTagsPage.tsx';
+import AdminSurveyQuestions from './pages/AdminSurveyQuestions';
+import AdminSurveyResponses from './pages/AdminSurveyResponses';
 
 export const adminRoutes = (
   <>
@@ -35,6 +37,8 @@ export const adminRoutes = (
       <Route path="restaurant-info" element={<AdminRestaurantInfo />} />
       <Route path="tags" element={<AdminTagsPage/>} />
       <Route path="customers" element={<AdminCustomers />} />
+      <Route path="survey-questions" element={<AdminSurveyQuestions />} />
+      <Route path="survey-responses" element={<AdminSurveyResponses />} />
     </Route>
   </>
 );

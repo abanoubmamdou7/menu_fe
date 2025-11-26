@@ -339,6 +339,83 @@ export type Database = {
         }
         Relationships: []
       }
+      survey_questions: {
+        Row: {
+          id: string
+          question_en: string
+          question_ar: string
+          question_type: string
+          is_active: boolean
+          display_order: number
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          question_en: string
+          question_ar: string
+          question_type?: string
+          is_active?: boolean
+          display_order?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          question_en?: string
+          question_ar?: string
+          question_type?: string
+          is_active?: boolean
+          display_order?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      survey_responses: {
+        Row: {
+          id: string
+          question_id: string
+          rating: number | null // 1-10 for rating questions, 10=yes/1=no for yes_no
+          text_response: string | null
+          customer_name: string | null
+          customer_email: string | null
+          customer_phone: string | null
+          session_id: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          question_id: string
+          rating?: number | null // 1-10 for rating questions
+          text_response?: string | null
+          customer_name?: string | null
+          customer_email?: string | null
+          customer_phone?: string | null
+          session_id: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          question_id?: string
+          rating?: number | null // 1-10 for rating questions
+          text_response?: string | null
+          customer_name?: string | null
+          customer_email?: string | null
+          customer_phone?: string | null
+          session_id?: string
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "survey_responses_question_id_fkey"
+            columns: ["question_id"]
+            isOneToOne: false
+            referencedRelation: "survey_questions"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
       tags: {
         Row: {
           created_at: string

@@ -10,6 +10,7 @@ import Menu from './pages/Menu';
 import NotFound from './pages/NotFound';
 import Locations from './pages/Locations';
 import Register from './pages/Register';
+import Survey from './pages/Survey';
 
 function AppContent() {
   useTheme(); // Apply theme across the application
@@ -22,6 +23,7 @@ function AppContent() {
         <Route path="/menu" element={<Menu />} />
         <Route path="/locations" element={<Locations />} />
         <Route path="/register" element={<Register />} />
+        <Route path="/survey" element={<Survey />} />
         {adminRoutes}
         <Route path="*" element={<NotFound />} />
       </Routes>

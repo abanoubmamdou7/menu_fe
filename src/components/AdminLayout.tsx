@@ -153,7 +153,9 @@ import {
   Info,
   Users,
   LogOut,
-  Tag, // 👈 Added Tag icon
+  Tag,
+  ClipboardList,
+  MessageSquare,
 } from "lucide-react";
 import { logout } from "../lib/auth.ts";
 
@@ -189,8 +191,12 @@ const AdminLayout: React.FC = () => {
         return "restaurant-info";
       case "customers":
         return "customers";
-      case "tags": // 👈 New case
+      case "tags":
         return "tags";
+      case "survey-questions":
+        return "survey-questions";
+      case "survey-responses":
+        return "survey-responses";
       default:
         return "";
     }
@@ -275,6 +281,16 @@ const AdminLayout: React.FC = () => {
               <TabsTrigger value="tags" asChild>
                 <Link to="/admin/tags">
                   <Tag className="h-4 w-4 mr-1" /> Tags
+                </Link>
+              </TabsTrigger>
+              <TabsTrigger value="survey-questions" asChild>
+                <Link to="/admin/survey-questions">
+                  <ClipboardList className="h-4 w-4 mr-1" /> Survey Questions
+                </Link>
+              </TabsTrigger>
+              <TabsTrigger value="survey-responses" asChild>
+                <Link to="/admin/survey-responses">
+                  <MessageSquare className="h-4 w-4 mr-1" /> Survey Responses
                 </Link>
               </TabsTrigger>
             </TabsList>
