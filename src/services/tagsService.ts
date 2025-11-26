@@ -62,10 +62,11 @@ export const updateTagsInfo = async (
       .single();
 
     if (!currentInfo?.id) {
-      // Create new record if none exists
+      // Create new record if none exists - generate UUID for id
       const { data, error } = await supabase
         .from("tags")
         .insert({
+          id: crypto.randomUUID(),
           fasting,
           vegetarian,
           healthy_choice,
