@@ -330,7 +330,7 @@ const Survey: React.FC = () => {
               <p className="mb-4 text-sm font-medium text-gray-600">
                 {t('optionalInfo')}
               </p>
-              <div className="grid gap-4 sm:grid-cols-3">
+              <div className="space-y-3">
                 <Input
                   placeholder={t('yourName')}
                   value={formData.customer_name}
