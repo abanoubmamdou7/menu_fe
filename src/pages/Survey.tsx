@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Send, CheckCircle2, ArrowLeft, ThumbsUp, ThumbsDown } from 'lucide-react';
-import { useActiveQuestions, useSubmitSurvey } from '@/services/surveyService';
+import { useActiveQuestions, useSubmitSurvey, useSurveySettings } from '@/services/surveyService';
 import { toast } from 'sonner';
 import { Link } from 'react-router-dom';
 import { cn } from '@/lib/utils';
@@ -17,7 +17,7 @@ interface SurveyFormData {
   customer_name: string;
   customer_email: string;
   customer_phone: string;
-  responses: Record<string, { rating?: number; text_response?: string }>;
+  responses: Record<string, { rating?: number; text_response?: string; selected_choice?: string }>;
 }
 
 const Survey: React.FC = () => {
@@ -26,7 +26,9 @@ const Survey: React.FC = () => {
   const isRtl = language === 'ar';
 
   const { data: questions = [], isLoading } = useActiveQuestions();
+  const { data: settings } = useSurveySettings();
   const submitSurvey = useSubmitSurvey();
+
   
   const [submitted, setSubmitted] = useState(false);
   const [formData, setFormData] = useState<SurveyFormData>({
@@ -66,15 +68,28 @@ const Survey: React.FC = () => {
     }));
   };
 
+  const handleChoiceChange = (questionId: string, choiceId: string) => {
+    setFormData(prev => ({
+      ...prev,
+      responses: {
+        ...prev.responses,
+        [questionId]: { ...prev.responses[questionId], selected_choice: choiceId },
+      },
+    }));
+  };
+
   const isFormValid = useMemo(() => {
-    // Check if at least one rating question is answered
+    // Check if at least one question is answered
     const hasRatingResponse = questions.some(q => 
       q.question_type === 'rating' && formData.responses[q.id]?.rating
     );
     const hasYesNoResponse = questions.some(q => 
       q.question_type === 'yes_no' && formData.responses[q.id]?.rating !== undefined
     );
-    return hasRatingResponse || hasYesNoResponse || questions.length === 0;
+    const hasChoiceResponse = questions.some(q => 
+      q.question_type === 'multiple_choice' && formData.responses[q.id]?.selected_choice
+    );
+    return hasRatingResponse || hasYesNoResponse || hasChoiceResponse || questions.length === 0;
   }, [questions, formData.responses]);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -84,6 +99,7 @@ const Survey: React.FC = () => {
       question_id,
       rating: response.rating,
       text_response: response.text_response,
+      selected_choice: response.selected_choice,
     }));
 
     try {
@@ -144,9 +160,14 @@ const Survey: React.FC = () => {
       </Link>
 
       <div className={cn("w-full", isRtl && "text-right")} dir={isRtl ? 'rtl' : 'ltr'}>
-        <p className="mb-6 text-center text-gray-600">
-          {t('surveyDescription')}
-        </p>
+        <div className="mb-6 text-center">
+          <p className="text-gray-600">
+            {settings?.description_en || t('surveyDescription')}
+          </p>
+          <p className="mt-1 text-sm text-gray-500" dir="rtl">
+            {settings?.description_ar || ''}
+          </p>
+        </div>
 
         {isLoading ? (
           <div className="space-y-6">
@@ -156,6 +177,20 @@ const Survey: React.FC = () => {
                 <Skeleton className="h-10 w-full" />
               </div>
             ))}
+          </div>
+        ) : settings && !settings.is_active ? (
+          <div className="py-12 text-center">
+            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-gray-100">
+              <Send className="h-8 w-8 text-gray-400" />
+            </div>
+            <h3 className="mb-2 text-lg font-semibold text-gray-700">{t('surveyUnavailable')}</h3>
+            <p className="mb-6 text-gray-500">{t('surveyUnavailableMessage')}</p>
+            <Link to="/">
+              <Button variant="outline" className="gap-2">
+                <ArrowLeft className={cn("h-4 w-4", isRtl && "rotate-180")} />
+                {t('backToHome')}
+              </Button>
+            </Link>
           </div>
         ) : questions.length === 0 ? (
           <div className="py-12 text-center">
@@ -250,6 +285,41 @@ const Survey: React.FC = () => {
                       onChange={e => handleTextChange(question.id, e.target.value)}
                       className="min-h-[100px] resize-none rounded-xl border-gray-200 focus:border-orange-300 focus:ring-orange-200"
                     />
+                  )}
+
+                  {question.question_type === 'multiple_choice' && question.choices && (
+                    <div className="space-y-2">
+                      {question.choices.map(choice => (
+                        <button
+                          key={choice.id}
+                          type="button"
+                          onClick={() => handleChoiceChange(question.id, choice.id)}
+                          className={cn(
+                            "w-full rounded-xl border-2 p-3 text-left transition-all",
+                            formData.responses[question.id]?.selected_choice === choice.id
+                              ? "border-orange-500 bg-orange-50"
+                              : "border-gray-200 bg-white hover:border-orange-300 hover:bg-orange-50/50"
+                          )}
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className={cn(
+                              "flex h-5 w-5 items-center justify-center rounded-full border-2 transition-colors",
+                              formData.responses[question.id]?.selected_choice === choice.id
+                                ? "border-orange-500 bg-orange-500"
+                                : "border-gray-300"
+                            )}>
+                              {formData.responses[question.id]?.selected_choice === choice.id && (
+                                <div className="h-2 w-2 rounded-full bg-white" />
+                              )}
+                            </div>
+                            <div className="flex-1">
+                              <p className="font-medium text-gray-800">{choice.text_en}</p>
+                              <p className="text-sm text-gray-500" dir="rtl">{choice.text_ar}</p>
+                            </div>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
                   )}
                 </div>
               ))}

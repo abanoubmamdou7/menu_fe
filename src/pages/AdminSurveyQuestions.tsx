@@ -1,12 +1,15 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   useAllQuestions, 
   useCreateQuestion, 
   useUpdateQuestion, 
   useDeleteQuestion, 
   useToggleQuestionStatus,
+  useSurveySettings,
+  useUpdateSurveySettings,
   SurveyQuestion,
-  SurveyQuestionFormValues
+  SurveyQuestionFormValues,
+  MultipleChoiceOption
 } from '@/services/surveyService';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -17,27 +20,46 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from 'sonner';
-import { Plus, Pencil, Trash2, GripVertical, Star, MessageSquare, ThumbsUp } from 'lucide-react';
+import { Plus, Pencil, Trash2, GripVertical, Star, MessageSquare, ThumbsUp, ListChecks, X, Settings, Save } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const questionTypeIcons = {
   rating: Star,
   text: MessageSquare,
   yes_no: ThumbsUp,
+  multiple_choice: ListChecks,
 };
 
 const questionTypeLabels = {
   rating: 'Rating (1-10)',
   text: 'Text Response',
   yes_no: 'Yes / No',
+  multiple_choice: 'Multiple Choice',
 };
 
 const AdminSurveyQuestions: React.FC = () => {
   const { data: questions = [], isLoading } = useAllQuestions();
+  const { data: settings } = useSurveySettings();
+  const updateSettings = useUpdateSurveySettings();
   const createQuestion = useCreateQuestion();
   const updateQuestion = useUpdateQuestion();
   const deleteQuestion = useDeleteQuestion();
   const toggleStatus = useToggleQuestionStatus();
+
+  const [descriptionEn, setDescriptionEn] = useState('');
+  const [descriptionAr, setDescriptionAr] = useState('');
+  const [surveyEnabled, setSurveyEnabled] = useState(true);
+
+  const MAX_QUESTIONS = 10;
+  const canAddMore = questions.length < MAX_QUESTIONS;
+
+  useEffect(() => {
+    if (settings) {
+      setDescriptionEn(settings.description_en);
+      setDescriptionAr(settings.description_ar);
+      setSurveyEnabled(settings.is_active);
+    }
+  }, [settings]);
 
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingQuestion, setEditingQuestion] = useState<SurveyQuestion | null>(null);
@@ -45,6 +67,7 @@ const AdminSurveyQuestions: React.FC = () => {
     question_en: '',
     question_ar: '',
     question_type: 'rating',
+    choices: [],
     is_active: true,
     display_order: 0,
   });
@@ -57,7 +80,8 @@ const AdminSurveyQuestions: React.FC = () => {
       setFormData({
         question_en: question.question_en,
         question_ar: question.question_ar,
-        question_type: question.question_type as 'rating' | 'text' | 'yes_no',
+        question_type: question.question_type as 'rating' | 'text' | 'yes_no' | 'multiple_choice',
+        choices: question.choices || [],
         is_active: question.is_active,
         display_order: question.display_order,
       });
@@ -67,11 +91,64 @@ const AdminSurveyQuestions: React.FC = () => {
         question_en: '',
         question_ar: '',
         question_type: 'rating',
+        choices: [],
         is_active: true,
         display_order: questions.length,
       });
     }
     setIsDialogOpen(true);
+  };
+
+  const addChoice = () => {
+    const newChoice: MultipleChoiceOption = {
+      id: crypto.randomUUID(),
+      text_en: '',
+      text_ar: '',
+    };
+    setFormData(prev => ({
+      ...prev,
+      choices: [...(prev.choices || []), newChoice],
+    }));
+  };
+
+  const updateChoice = (id: string, field: 'text_en' | 'text_ar', value: string) => {
+    setFormData(prev => ({
+      ...prev,
+      choices: (prev.choices || []).map(choice =>
+        choice.id === id ? { ...choice, [field]: value } : choice
+      ),
+    }));
+  };
+
+  const removeChoice = (id: string) => {
+    setFormData(prev => ({
+      ...prev,
+      choices: (prev.choices || []).filter(choice => choice.id !== id),
+    }));
+  };
+
+  const handleSaveSettings = async () => {
+    try {
+      await updateSettings.mutateAsync({
+        description_en: descriptionEn,
+        description_ar: descriptionAr,
+        is_active: surveyEnabled,
+      });
+      toast.success('Survey settings saved successfully');
+    } catch {
+      toast.error('Failed to save settings');
+    }
+  };
+
+  const handleToggleSurvey = async (enabled: boolean) => {
+    setSurveyEnabled(enabled);
+    try {
+      await updateSettings.mutateAsync({ is_active: enabled });
+      toast.success(enabled ? 'Survey enabled' : 'Survey disabled');
+    } catch {
+      toast.error('Failed to update survey status');
+      setSurveyEnabled(!enabled);
+    }
   };
 
   const handleCloseDialog = () => {
@@ -125,10 +202,76 @@ const AdminSurveyQuestions: React.FC = () => {
             Manage your survey questions with bilingual support (English & Arabic)
           </p>
         </div>
-        <Button onClick={() => handleOpenDialog()} className="gap-2">
+        <Button 
+          onClick={() => handleOpenDialog()} 
+          className="gap-2"
+          disabled={!canAddMore}
+          title={!canAddMore ? `Maximum ${MAX_QUESTIONS} questions allowed` : undefined}
+        >
           <Plus className="h-4 w-4" />
-          Add Question
+          Add Question ({questions.length}/{MAX_QUESTIONS})
         </Button>
+      </div>
+
+      {/* Survey Settings */}
+      <div className="rounded-xl border bg-white p-6 shadow-sm">
+        <div className="mb-4 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Settings className="h-5 w-5 text-gray-500" />
+            <h3 className="text-lg font-semibold text-gray-900">Survey Settings</h3>
+          </div>
+          <div className="flex items-center gap-3 rounded-lg border bg-gray-50 px-4 py-2">
+            <span className="text-sm font-medium text-gray-700">Survey Status:</span>
+            <Switch
+              checked={surveyEnabled}
+              onCheckedChange={handleToggleSurvey}
+            />
+            <span className={cn(
+              "text-sm font-semibold",
+              surveyEnabled ? "text-emerald-600" : "text-gray-500"
+            )}>
+              {surveyEnabled ? 'Enabled' : 'Disabled'}
+            </span>
+          </div>
+        </div>
+
+        {!surveyEnabled && (
+          <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+            ⚠️ The survey is currently disabled. Customers will not be able to access it.
+          </div>
+        )}
+
+        <div className="grid gap-4 md:grid-cols-2">
+          <div className="space-y-2">
+            <label className="text-sm font-medium text-gray-700">Description (English)</label>
+            <Textarea
+              value={descriptionEn}
+              onChange={e => setDescriptionEn(e.target.value)}
+              placeholder="Enter survey description in English..."
+              className="min-h-[80px]"
+            />
+          </div>
+          <div className="space-y-2">
+            <label className="text-sm font-medium text-gray-700">Description (Arabic)</label>
+            <Textarea
+              value={descriptionAr}
+              onChange={e => setDescriptionAr(e.target.value)}
+              placeholder="أدخل وصف الاستبيان بالعربية..."
+              dir="rtl"
+              className="min-h-[80px] text-right"
+            />
+          </div>
+        </div>
+        <div className="mt-4 flex justify-end">
+          <Button 
+            onClick={handleSaveSettings} 
+            disabled={updateSettings.isPending}
+            className="gap-2"
+          >
+            <Save className="h-4 w-4" />
+            {updateSettings.isPending ? 'Saving...' : 'Save Description'}
+          </Button>
+        </div>
       </div>
 
       {/* Questions Table */}
@@ -304,6 +447,12 @@ const AdminSurveyQuestions: React.FC = () => {
                         Yes / No
                       </div>
                     </SelectItem>
+                    <SelectItem value="multiple_choice">
+                      <div className="flex items-center gap-2">
+                        <ListChecks className="h-4 w-4" />
+                        Multiple Choice
+                      </div>
+                    </SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -337,11 +486,69 @@ const AdminSurveyQuestions: React.FC = () => {
               </div>
             </div>
 
+            {/* Multiple Choice Options */}
+            {formData.question_type === 'multiple_choice' && (
+              <div className="space-y-4 rounded-lg border bg-gray-50/50 p-4">
+                <div className="flex items-center justify-between">
+                  <label className="text-sm font-medium text-gray-700">
+                    Choices <span className="text-red-500">*</span>
+                  </label>
+                  <Button type="button" size="sm" variant="outline" onClick={addChoice} className="gap-1">
+                    <Plus className="h-3 w-3" />
+                    Add Choice
+                  </Button>
+                </div>
+                
+                {(formData.choices || []).length === 0 ? (
+                  <p className="text-center text-sm text-gray-500 py-4">
+                    No choices added yet. Click "Add Choice" to create options.
+                  </p>
+                ) : (
+                  <div className="space-y-3">
+                    {(formData.choices || []).map((choice, index) => (
+                      <div key={choice.id} className="flex items-start gap-2 rounded-lg border bg-white p-3">
+                        <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-orange-100 text-xs font-bold text-orange-600">
+                          {index + 1}
+                        </span>
+                        <div className="flex-1 grid gap-2 sm:grid-cols-2">
+                          <Input
+                            placeholder="Choice (English)"
+                            value={choice.text_en}
+                            onChange={e => updateChoice(choice.id, 'text_en', e.target.value)}
+                            className="text-sm"
+                          />
+                          <Input
+                            placeholder="الخيار (بالعربية)"
+                            value={choice.text_ar}
+                            onChange={e => updateChoice(choice.id, 'text_ar', e.target.value)}
+                            dir="rtl"
+                            className="text-sm text-right"
+                          />
+                        </div>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => removeChoice(choice.id)}
+                          className="h-8 w-8 p-0 text-red-500 hover:bg-red-50 hover:text-red-600"
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
             <div className="flex justify-end gap-3 border-t pt-4">
               <Button type="button" variant="outline" onClick={handleCloseDialog}>
                 Cancel
               </Button>
-              <Button type="submit" disabled={isPending}>
+              <Button 
+                type="submit" 
+                disabled={isPending || (formData.question_type === 'multiple_choice' && (!formData.choices || formData.choices.length < 2))}
+              >
                 {isPending ? 'Saving...' : editingQuestion ? 'Update Question' : 'Create Question'}
               </Button>
             </div>

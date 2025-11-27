@@ -1,20 +1,20 @@
 import React, { useState, useMemo } from 'react';
-import { useGroupedResponses, useDeleteResponseSession, GroupedSurveyResponse } from '@/services/surveyService';
+import { useGroupedResponses, useDeleteResponseSession, GroupedSurveyResponse, useAllQuestions } from '@/services/surveyService';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { toast } from 'sonner';
-import { Trash2, Eye, Search, Calendar, User, Mail, Phone, MessageSquare, ThumbsUp, ThumbsDown } from 'lucide-react';
+import { Trash2, Search, Download, MessageSquare, ThumbsUp, ThumbsDown } from 'lucide-react';
+import { MultipleChoiceOption } from '@/services/surveyService';
 import { cn } from '@/lib/utils';
 
 const AdminSurveyResponses: React.FC = () => {
   const { data: responses = [], isLoading } = useGroupedResponses();
+  const { data: questions = [] } = useAllQuestions();
   const deleteSession = useDeleteResponseSession();
 
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedResponse, setSelectedResponse] = useState<GroupedSurveyResponse | null>(null);
 
   const filteredResponses = useMemo(() => {
     if (!searchTerm.trim()) return responses;
@@ -31,7 +31,6 @@ const AdminSurveyResponses: React.FC = () => {
       try {
         await deleteSession.mutateAsync(sessionId);
         toast.success('Response deleted successfully');
-        setSelectedResponse(null);
       } catch {
         toast.error('Failed to delete response');
       }
@@ -49,29 +48,156 @@ const AdminSurveyResponses: React.FC = () => {
     }).format(date);
   };
 
-  const getAverageRating = (response: GroupedSurveyResponse) => {
-    const ratingResponses = response.responses.filter(r => r.rating !== null);
-    if (ratingResponses.length === 0) return null;
-    const avg = ratingResponses.reduce((sum, r) => sum + (r.rating || 0), 0) / ratingResponses.length;
-    return avg.toFixed(1);
+  const formatDateForExcel = (dateString: string) => {
+    const date = new Date(dateString);
+    return date.toISOString().split('T')[0] + ' ' + date.toTimeString().split(' ')[0];
   };
 
-  const renderRating = (rating: number | null) => {
-    if (rating === null) return <span className="text-gray-400">—</span>;
-    const getColor = (r: number) => {
-      if (r >= 8) return "bg-emerald-500";
-      if (r >= 5) return "bg-amber-500";
-      return "bg-rose-500";
-    };
-    return (
-      <div className="flex items-center gap-2">
-        <div className={cn("flex h-8 w-8 items-center justify-center rounded-full text-sm font-bold text-white", getColor(rating))}>
-          {rating}
-        </div>
-        <span className="text-xs text-gray-500">/10</span>
-      </div>
-    );
+  const getResponseValue = (response: GroupedSurveyResponse, questionId: string): string => {
+    const r = response.responses.find(res => res.question_id === questionId);
+    if (!r) return '';
+
+    const question = r.question;
+    if (!question) return '';
+
+    switch (question.question_type) {
+      case 'rating':
+        return r.rating !== null ? `${r.rating}/10` : '';
+      case 'yes_no':
+        if (r.rating === 10) return 'Yes';
+        if (r.rating === 1) return 'No';
+        return '';
+      case 'text':
+        return r.text_response || '';
+      case 'multiple_choice':
+        if (!r.selected_choice) return '';
+        const choices = question.choices as MultipleChoiceOption[] | null;
+        const selectedChoice = choices?.find(c => c.id === r.selected_choice);
+        return selectedChoice ? `${selectedChoice.text_en} / ${selectedChoice.text_ar}` : '';
+      default:
+        return '';
+    }
   };
+
+  const getResponseDisplay = (response: GroupedSurveyResponse, questionId: string) => {
+    const r = response.responses.find(res => res.question_id === questionId);
+    if (!r) return <span className="text-gray-300">—</span>;
+
+    const question = r.question;
+    if (!question) return <span className="text-gray-300">—</span>;
+
+    switch (question.question_type) {
+      case 'rating':
+        if (r.rating === null) return <span className="text-gray-300">—</span>;
+        const getRatingColor = (rating: number) => {
+          if (rating >= 8) return "bg-emerald-500";
+          if (rating >= 5) return "bg-amber-500";
+          return "bg-rose-500";
+        };
+        return (
+          <div className="flex items-center gap-1">
+            <div className={cn(
+              "flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold text-white",
+              getRatingColor(r.rating)
+            )}>
+              {r.rating}
+            </div>
+          </div>
+        );
+
+      case 'yes_no':
+        if (r.rating === 10) {
+          return <ThumbsUp className="h-4 w-4 text-emerald-500" />;
+        } else if (r.rating === 1) {
+          return <ThumbsDown className="h-4 w-4 text-rose-500" />;
+        }
+        return <span className="text-gray-300">—</span>;
+
+      case 'text':
+        if (!r.text_response) return <span className="text-gray-300">—</span>;
+        return (
+          <span className="text-xs text-gray-700 line-clamp-2 max-w-[150px]" title={r.text_response}>
+            {r.text_response}
+          </span>
+        );
+
+      case 'multiple_choice':
+        if (!r.selected_choice) return <span className="text-gray-300">—</span>;
+        const choices = question.choices as MultipleChoiceOption[] | null;
+        const selectedChoice = choices?.find(c => c.id === r.selected_choice);
+        if (!selectedChoice) return <span className="text-gray-300">—</span>;
+        return (
+          <span className="text-xs text-gray-700 line-clamp-1 max-w-[120px]" title={selectedChoice.text_en}>
+            {selectedChoice.text_en}
+          </span>
+        );
+
+      default:
+        return <span className="text-gray-300">—</span>;
+    }
+  };
+
+  const exportToExcel = () => {
+    if (filteredResponses.length === 0) {
+      toast.error('No data to export');
+      return;
+    }
+
+    // Build headers
+    const headers = [
+      'Customer Name',
+      'Email',
+      'Phone',
+      'Submitted Date',
+      ...questions.map(q => q.question_en)
+    ];
+
+    // Build rows
+    const rows = filteredResponses.map(response => [
+      response.customer_name || 'Anonymous',
+      response.customer_email || '',
+      response.customer_phone || '',
+      formatDateForExcel(response.created_at),
+      ...questions.map(q => getResponseValue(response, q.id))
+    ]);
+
+    // Create CSV content
+    const csvContent = [
+      headers.join(','),
+      ...rows.map(row => 
+        row.map(cell => {
+          // Escape quotes and wrap in quotes if contains comma or newline
+          const escaped = String(cell).replace(/"/g, '""');
+          return escaped.includes(',') || escaped.includes('\n') || escaped.includes('"') 
+            ? `"${escaped}"` 
+            : escaped;
+        }).join(',')
+      )
+    ].join('\n');
+
+    // Add BOM for Excel UTF-8 compatibility
+    const BOM = '\uFEFF';
+    const blob = new Blob([BOM + csvContent], { type: 'text/csv;charset=utf-8;' });
+    
+    // Create download link
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `survey_responses_${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    toast.success('Export successful! Open with Excel.');
+  };
+
+  // Get active questions for table columns
+  const activeQuestions = useMemo(() => {
+    return questions.filter(q => responses.some(r => 
+      r.responses.some(res => res.question_id === q.id)
+    ));
+  }, [questions, responses]);
 
   return (
     <div className="space-y-6">
@@ -82,243 +208,135 @@ const AdminSurveyResponses: React.FC = () => {
             View and manage customer survey submissions ({responses.length} total)
           </p>
         </div>
-        <div className="relative max-w-xs">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-          <Input
-            placeholder="Search by name, email, phone..."
-            value={searchTerm}
-            onChange={e => setSearchTerm(e.target.value)}
-            className="pl-10"
-          />
+        <div className="flex items-center gap-3">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+            <Input
+              placeholder="Search..."
+              value={searchTerm}
+              onChange={e => setSearchTerm(e.target.value)}
+              className="pl-10 w-48"
+            />
+          </div>
+          <Button 
+            onClick={exportToExcel} 
+            variant="outline" 
+            className="gap-2"
+            disabled={filteredResponses.length === 0}
+          >
+            <Download className="h-4 w-4" />
+            Export Excel
+          </Button>
         </div>
       </div>
 
       {/* Responses Table */}
-      <div className="rounded-xl border bg-white shadow-sm">
-        <Table>
-          <TableHeader>
-            <TableRow className="bg-gray-50/50">
-              <TableHead>Customer</TableHead>
-              <TableHead>Contact</TableHead>
-              <TableHead className="w-32 text-center">Avg Rating</TableHead>
-              <TableHead className="w-40">Submitted</TableHead>
-              <TableHead className="w-28 text-right">Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {isLoading ? (
-              Array.from({ length: 5 }).map((_, i) => (
-                <TableRow key={i}>
-                  <TableCell><Skeleton className="h-5 w-32" /></TableCell>
-                  <TableCell><Skeleton className="h-5 w-48" /></TableCell>
-                  <TableCell><Skeleton className="mx-auto h-5 w-20" /></TableCell>
-                  <TableCell><Skeleton className="h-5 w-36" /></TableCell>
-                  <TableCell><Skeleton className="ml-auto h-8 w-20" /></TableCell>
-                </TableRow>
-              ))
-            ) : filteredResponses.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={5} className="h-32 text-center text-gray-500">
-                  {searchTerm ? 'No responses match your search.' : 'No survey responses yet.'}
-                </TableCell>
+      <div className="rounded-xl border bg-white shadow-sm overflow-hidden">
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow className="bg-gray-50/80">
+                <TableHead className="sticky left-0 bg-gray-50/80 z-10 min-w-[140px]">Customer</TableHead>
+                <TableHead className="min-w-[180px]">Contact</TableHead>
+                <TableHead className="min-w-[140px]">Date</TableHead>
+                {activeQuestions.map(q => (
+                  <TableHead key={q.id} className="min-w-[120px]">
+                    <div className="space-y-0.5">
+                      <p className="text-xs font-medium truncate max-w-[120px]" title={q.question_en}>
+                        {q.question_en}
+                      </p>
+                      <p className="text-[10px] text-gray-400 truncate max-w-[120px]" dir="rtl" title={q.question_ar}>
+                        {q.question_ar}
+                      </p>
+                    </div>
+                  </TableHead>
+                ))}
+                <TableHead className="w-16 text-right">Actions</TableHead>
               </TableRow>
-            ) : (
-              filteredResponses.map(response => {
-                const avgRating = getAverageRating(response);
-                return (
+            </TableHeader>
+            <TableBody>
+              {isLoading ? (
+                Array.from({ length: 5 }).map((_, i) => (
+                  <TableRow key={i}>
+                    <TableCell><Skeleton className="h-5 w-24" /></TableCell>
+                    <TableCell><Skeleton className="h-5 w-36" /></TableCell>
+                    <TableCell><Skeleton className="h-5 w-28" /></TableCell>
+                    {Array.from({ length: 3 }).map((_, j) => (
+                      <TableCell key={j}><Skeleton className="h-5 w-16" /></TableCell>
+                    ))}
+                    <TableCell><Skeleton className="h-8 w-8 ml-auto" /></TableCell>
+                  </TableRow>
+                ))
+              ) : filteredResponses.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={4 + activeQuestions.length} className="h-32 text-center">
+                    <div className="flex flex-col items-center gap-2">
+                      <MessageSquare className="h-8 w-8 text-gray-300" />
+                      <p className="text-gray-500">
+                        {searchTerm ? 'No responses match your search' : 'No survey responses yet'}
+                      </p>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ) : (
+                filteredResponses.map(response => (
                   <TableRow key={response.session_id} className="hover:bg-gray-50/50">
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-100 text-emerald-700">
-                          <User className="h-4 w-4" />
-                        </div>
-                        <span className="font-medium">
-                          {response.customer_name || 'Anonymous'}
-                        </span>
-                      </div>
+                    <TableCell className="sticky left-0 bg-white z-10 font-medium">
+                      {response.customer_name || <span className="text-gray-400">Anonymous</span>}
                     </TableCell>
                     <TableCell>
-                      <div className="space-y-1 text-sm">
+                      <div className="space-y-0.5 text-xs">
                         {response.customer_email && (
-                          <div className="flex items-center gap-1.5 text-gray-600">
-                            <Mail className="h-3.5 w-3.5" />
+                          <p className="text-gray-600 truncate max-w-[160px]" title={response.customer_email}>
                             {response.customer_email}
-                          </div>
+                          </p>
                         )}
                         {response.customer_phone && (
-                          <div className="flex items-center gap-1.5 text-gray-600">
-                            <Phone className="h-3.5 w-3.5" />
-                            {response.customer_phone}
-                          </div>
+                          <p className="text-gray-500">{response.customer_phone}</p>
                         )}
                         {!response.customer_email && !response.customer_phone && (
-                          <span className="text-gray-400">No contact info</span>
+                          <span className="text-gray-300">—</span>
                         )}
                       </div>
                     </TableCell>
-                    <TableCell className="text-center">
-                      {avgRating ? (
-                        <div className="flex flex-col items-center gap-1">
-                          <div className="flex items-center gap-1">
-                            <span className="text-lg font-bold text-amber-500">{avgRating}</span>
-                            <span className="text-xs text-gray-400">/10</span>
-                          </div>
-                          <span className="text-xs text-gray-500">
-                            {response.responses.filter(r => r.rating).length} ratings
-                          </span>
-                        </div>
-                      ) : (
-                        <span className="text-gray-400">—</span>
-                      )}
+                    <TableCell className="text-xs text-gray-600">
+                      {formatDate(response.created_at)}
                     </TableCell>
+                    {activeQuestions.map(q => (
+                      <TableCell key={q.id}>
+                        {getResponseDisplay(response, q.id)}
+                      </TableCell>
+                    ))}
                     <TableCell>
-                      <div className="flex items-center gap-1.5 text-sm text-gray-600">
-                        <Calendar className="h-3.5 w-3.5" />
-                        {formatDate(response.created_at)}
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center justify-end gap-2">
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => setSelectedResponse(response)}
-                          className="h-8 w-8 p-0"
-                        >
-                          <Eye className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => handleDelete(response.session_id)}
-                          className="h-8 w-8 p-0 text-red-600 hover:bg-red-50 hover:text-red-700"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => handleDelete(response.session_id)}
+                        className="h-8 w-8 p-0 text-red-600 hover:bg-red-50 hover:text-red-700"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
                     </TableCell>
                   </TableRow>
-                );
-              })
-            )}
-          </TableBody>
-        </Table>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </div>
       </div>
 
-      {/* Response Detail Dialog */}
-      <Dialog open={!!selectedResponse} onOpenChange={() => setSelectedResponse(null)}>
-        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <User className="h-5 w-5 text-emerald-600" />
-              Survey Response Details
-            </DialogTitle>
-            <DialogDescription>
-              Submitted on {selectedResponse && formatDate(selectedResponse.created_at)}
-            </DialogDescription>
-          </DialogHeader>
-
-          {selectedResponse && (
-            <div className="space-y-6">
-              {/* Customer Info */}
-              <div className="rounded-lg border bg-gray-50/50 p-4">
-                <h4 className="mb-3 text-sm font-semibold text-gray-700">Customer Information</h4>
-                <div className="grid gap-3 sm:grid-cols-3">
-                  <div className="flex items-center gap-2">
-                    <User className="h-4 w-4 text-gray-400" />
-                    <span>{selectedResponse.customer_name || 'Anonymous'}</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Mail className="h-4 w-4 text-gray-400" />
-                    <span>{selectedResponse.customer_email || '—'}</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Phone className="h-4 w-4 text-gray-400" />
-                    <span>{selectedResponse.customer_phone || '—'}</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Responses */}
-              <div className="space-y-4">
-                <h4 className="text-sm font-semibold text-gray-700">Answers</h4>
-                {selectedResponse.responses.map((response, index) => (
-                  <div
-                    key={response.id}
-                    className="rounded-lg border p-4 transition-colors hover:bg-gray-50/50"
-                  >
-                    <div className="mb-3 flex items-start gap-2">
-                      <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-orange-100 text-xs font-bold text-orange-600">
-                        {index + 1}
-                      </span>
-                      <div className="flex-1">
-                        <p className="font-medium text-gray-800">
-                          {response.question?.question_en || 'Unknown question'}
-                        </p>
-                        <p className="mt-1 text-sm text-gray-500" dir="rtl">
-                          {response.question?.question_ar || ''}
-                        </p>
-                      </div>
-                    </div>
-                    
-                    <div className="ml-8">
-                      {response.question?.question_type === 'rating' && (
-                        <div className="flex items-center gap-3">
-                          {renderRating(response.rating)}
-                        </div>
-                      )}
-                      
-                      {response.question?.question_type === 'yes_no' && (
-                        <div className="flex items-center gap-2">
-                          {response.rating === 10 ? (
-                            <>
-                              <ThumbsUp className="h-5 w-5 text-emerald-500" />
-                              <span className="font-medium text-emerald-600">Yes</span>
-                            </>
-                          ) : response.rating === 1 ? (
-                            <>
-                              <ThumbsDown className="h-5 w-5 text-rose-500" />
-                              <span className="font-medium text-rose-600">No</span>
-                            </>
-                          ) : (
-                            <span className="text-gray-400">Not answered</span>
-                          )}
-                        </div>
-                      )}
-                      
-                      {response.question?.question_type === 'text' && (
-                        <div className="flex items-start gap-2">
-                          <MessageSquare className="mt-0.5 h-4 w-4 flex-shrink-0 text-gray-400" />
-                          <p className="text-gray-700">
-                            {response.text_response || <span className="text-gray-400 italic">No response</span>}
-                          </p>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              <div className="flex justify-end gap-3 border-t pt-4">
-                <Button
-                  variant="destructive"
-                  onClick={() => handleDelete(selectedResponse.session_id)}
-                  className="gap-2"
-                >
-                  <Trash2 className="h-4 w-4" />
-                  Delete Response
-                </Button>
-                <Button variant="outline" onClick={() => setSelectedResponse(null)}>
-                  Close
-                </Button>
-              </div>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
+      {/* Summary Stats */}
+      {filteredResponses.length > 0 && (
+        <div className="rounded-lg border bg-gray-50 p-4">
+          <p className="text-sm text-gray-600">
+            Showing <span className="font-semibold">{filteredResponses.length}</span> of{' '}
+            <span className="font-semibold">{responses.length}</span> responses
+            {searchTerm && <span className="text-gray-400"> (filtered)</span>}
+          </p>
+        </div>
+      )}
     </div>
   );
 };
 
 export default AdminSurveyResponses;
-

@@ -90,6 +90,8 @@ export const translations = {
     submitting: 'Submitting...',
     yes: 'Yes',
     no: 'No',
+    surveyUnavailable: 'Survey Unavailable',
+    surveyUnavailableMessage: 'The survey is currently not available. Please check back later.',
   },
   ar: {
     mashwizRestaurant: 'مطعم مشويز',
@@ -182,5 +184,7 @@ export const translations = {
     submitting: 'جاري الإرسال...',
     yes: 'نعم',
     no: 'لا',
+    surveyUnavailable: 'الاستبيان غير متاح',
+    surveyUnavailableMessage: 'الاستبيان غير متاح حالياً. يرجى المحاولة لاحقاً.',
   }
 };

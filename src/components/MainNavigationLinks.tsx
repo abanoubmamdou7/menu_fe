@@ -1,6 +1,7 @@
 import React, { useMemo, useState, useEffect, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { MapPin, Menu as MenuIcon, User, Store, ClipboardList } from 'lucide-react';
+import { useSurveySettings } from '@/services/surveyService';
 import LinkButton from '@/components/LinkButton';
 import { useTranslation } from '@/hooks/useTranslation';
 import {
@@ -36,6 +37,9 @@ const MainNavigationLinks: React.FC = () => {
     isLoading: isLoadingBranches,
     isError: hasBranchError,
   } = useMenuBranches();
+
+  const { data: surveySettings } = useSurveySettings();
+  const isSurveyEnabled = surveySettings?.is_active ?? true;
 
   const branches = useMemo<PublicBranch[]>(() => branchOptions ?? [], [branchOptions]);
   
@@ -196,29 +200,31 @@ const MainNavigationLinks: React.FC = () => {
           }}
         />
 
-        <LinkButton
-          href="/survey"
-          icon={ClipboardList}
-          label={t('takeSurvey')}
-          asComponent={Link}
-          style={{
-            backgroundColor: '#10B981',
-            color: '#fff',
-            width: '100%',
-            textAlign: 'center',
-            padding: '1rem',
-            borderRadius: '0.75rem',
-            fontSize: '1.125rem',
-            fontWeight: 600,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: '0.5rem'
-          }}
-          hoverStyle={{
-            backgroundColor: 'rgba(16, 185, 129, 0.9)',
-          }}
-        />
+        {isSurveyEnabled && (
+          <LinkButton
+            href="/survey"
+            icon={ClipboardList}
+            label={t('takeSurvey')}
+            asComponent={Link}
+            style={{
+              backgroundColor: '#10B981',
+              color: '#fff',
+              width: '100%',
+              textAlign: 'center',
+              padding: '1rem',
+              borderRadius: '0.75rem',
+              fontSize: '1.125rem',
+              fontWeight: 600,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '0.5rem'
+            }}
+            hoverStyle={{
+              backgroundColor: 'rgba(16, 185, 129, 0.9)',
+            }}
+          />
+        )}
       </div>
 
       <Dialog open={isBranchDialogOpen} onOpenChange={setIsBranchDialogOpen}>

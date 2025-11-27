@@ -2,11 +2,18 @@ import { supabase } from '@/integrations/supabase/client';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
 // Types
+export interface MultipleChoiceOption {
+  id: string;
+  text_en: string;
+  text_ar: string;
+}
+
 export interface SurveyQuestion {
   id: string;
   question_en: string;
   question_ar: string;
-  question_type: 'rating' | 'text' | 'yes_no';
+  question_type: 'rating' | 'text' | 'yes_no' | 'multiple_choice';
+  choices: MultipleChoiceOption[] | null;
   is_active: boolean;
   display_order: number;
   created_at: string;
@@ -18,6 +25,7 @@ export interface SurveyResponse {
   question_id: string;
   rating: number | null;
   text_response: string | null;
+  selected_choice: string | null;
   customer_name: string | null;
   customer_email: string | null;
   customer_phone: string | null;
@@ -29,7 +37,8 @@ export interface SurveyResponse {
 export interface SurveyQuestionFormValues {
   question_en: string;
   question_ar: string;
-  question_type: 'rating' | 'text' | 'yes_no';
+  question_type: 'rating' | 'text' | 'yes_no' | 'multiple_choice';
+  choices?: MultipleChoiceOption[] | null;
   is_active: boolean;
   display_order: number;
 }
@@ -42,8 +51,62 @@ export interface SurveySubmission {
     question_id: string;
     rating?: number;
     text_response?: string;
+    selected_choice?: string; // ID of selected choice for multiple_choice
   }[];
 }
+
+export interface SurveySettings {
+  id: string;
+  description_en: string;
+  description_ar: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+// Fetch survey settings
+export const fetchSurveySettings = async (): Promise<SurveySettings | null> => {
+  const { data, error } = await supabase
+    .from('survey_settings')
+    .select('*')
+    .limit(1)
+    .maybeSingle();
+
+  if (error) throw error;
+  return data as SurveySettings | null;
+};
+
+// Update survey settings
+export const updateSurveySettings = async (values: Partial<SurveySettings>): Promise<SurveySettings> => {
+  // First check if settings exist
+  const existing = await fetchSurveySettings();
+  
+  if (existing) {
+    const { data, error } = await supabase
+      .from('survey_settings')
+      .update(values)
+      .eq('id', existing.id)
+      .select()
+      .single();
+
+    if (error) throw error;
+    return data as SurveySettings;
+  } else {
+    // Create new settings
+    const { data, error } = await supabase
+      .from('survey_settings')
+      .insert([{
+        description_en: values.description_en || 'Help us improve by sharing your feedback. Your opinion matters!',
+        description_ar: values.description_ar || 'ساعدنا في التحسين من خلال مشاركة ملاحظاتك. رأيك يهمنا!',
+        is_active: values.is_active ?? true,
+      }])
+      .select()
+      .single();
+
+    if (error) throw error;
+    return data as SurveySettings;
+  }
+};
 
 // Fetch active questions (for public survey)
 export const fetchActiveQuestions = async (): Promise<SurveyQuestion[]> => {
@@ -116,6 +179,7 @@ export const submitSurvey = async (submission: SurveySubmission): Promise<void> 
     question_id: response.question_id,
     rating: response.rating ?? null,
     text_response: response.text_response ?? null,
+    selected_choice: response.selected_choice ?? null,
     customer_name: submission.customer_name ?? null,
     customer_email: submission.customer_email ?? null,
     customer_phone: submission.customer_phone ?? null,
@@ -263,6 +327,23 @@ export const useDeleteResponseSession = () => {
     mutationFn: deleteResponseSession,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['surveyResponses'] });
+    },
+  });
+};
+
+export const useSurveySettings = () => {
+  return useQuery({
+    queryKey: ['surveySettings'],
+    queryFn: fetchSurveySettings,
+  });
+};
+
+export const useUpdateSurveySettings = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: updateSurveySettings,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['surveySettings'] });
     },
   });
 };

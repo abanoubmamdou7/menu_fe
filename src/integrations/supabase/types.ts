@@ -339,12 +339,40 @@ export type Database = {
         }
         Relationships: []
       }
+      survey_settings: {
+        Row: {
+          id: string
+          description_en: string
+          description_ar: string
+          is_active: boolean
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          description_en?: string
+          description_ar?: string
+          is_active?: boolean
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          description_en?: string
+          description_ar?: string
+          is_active?: boolean
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       survey_questions: {
         Row: {
           id: string
           question_en: string
           question_ar: string
           question_type: string
+          choices: Json | null
           is_active: boolean
           display_order: number
           created_at: string
@@ -355,6 +383,7 @@ export type Database = {
           question_en: string
           question_ar: string
           question_type?: string
+          choices?: Json | null
           is_active?: boolean
           display_order?: number
           created_at?: string
@@ -365,6 +394,7 @@ export type Database = {
           question_en?: string
           question_ar?: string
           question_type?: string
+          choices?: Json | null
           is_active?: boolean
           display_order?: number
           created_at?: string
@@ -378,6 +408,7 @@ export type Database = {
           question_id: string
           rating: number | null // 1-10 for rating questions, 10=yes/1=no for yes_no
           text_response: string | null
+          selected_choice: string | null // ID of selected choice for multiple_choice
           customer_name: string | null
           customer_email: string | null
           customer_phone: string | null
@@ -389,6 +420,7 @@ export type Database = {
           question_id: string
           rating?: number | null // 1-10 for rating questions
           text_response?: string | null
+          selected_choice?: string | null
           customer_name?: string | null
           customer_email?: string | null
           customer_phone?: string | null
@@ -400,6 +432,7 @@ export type Database = {
           question_id?: string
           rating?: number | null // 1-10 for rating questions
           text_response?: string | null
+          selected_choice?: string | null
           customer_name?: string | null
           customer_email?: string | null
           customer_phone?: string | null
